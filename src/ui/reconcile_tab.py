@@ -35,6 +35,7 @@ _HEADERS = [
     "Exotic Amount",    # WS rec amt
     "Rate",
     "WS Value Date",
+    "WS Deal #",        # WS wallstreet_ref
     "Conf # / Ext Deal #",   # centre — matching key
     "Currency",         # GPG
     "GPG Amount",       # GPG
@@ -46,7 +47,7 @@ _HEADERS = [
 ]
 
 # Column index of the matching key
-_CONF_COL = 6
+_CONF_COL = 7
 
 # Header background per section
 _WS_HEADER_BG   = QColor("#1a2a3a")   # dark blue
@@ -85,8 +86,8 @@ _STATUS_FG = {
 }
 
 # WS columns (indices), centre col, GPG columns (indices)
-_WS_COLS  = [1, 2, 3, 4, 5]
-_GPG_COLS = [7, 8, 9, 10, 11, 12, 13]
+_WS_COLS  = [1, 2, 3, 4, 5, 6]
+_GPG_COLS = [8, 9, 10, 11, 12, 13, 14]
 
 
 class ReconcileTab(QWidget):
@@ -324,21 +325,25 @@ class ReconcileTab(QWidget):
                 (str(ws.rate) if ws else "",            row_bg, None, False),
                 # 5  WS Value Date
                 (ws.value_date.strftime("%d %b %Y") if ws else "", row_bg, None, False),
-                # 6  CONF # (centre key)
-                (conf,                                  key_bg, QColor("#ffc107"), True),
-                # 7  GPG Currency
+                # 6  WS Deal #
+                (ws.wallstreet_ref if ws else "",       row_bg, None, False),
+                # 7  CONF # (centre key) — green when matched, amber otherwise
+                (conf,  key_bg,
+                 QColor("#4caf50") if sv == MatchStatus.MATCHED.value else QColor("#ffc107"),
+                 True),
+                # 8  GPG Currency
                 (gpg.buy_currency if gpg else "",       row_bg, None, False),
-                # 8  GPG Amount
+                # 9  GPG Amount
                 (str(gpg.buy_amount) if gpg else "",    row_bg, None, False),
-                # 9  GPG Value Date
+                # 10 GPG Value Date
                 (gpg.value_date.strftime("%d %b %Y") if gpg else "", row_bg, None, False),
-                # 10 GPG Status
-                (gpg.status_code if gpg else "",           row_bg, None, False),
-                # 11 Arrival Date
+                # 11 GPG Status
+                (gpg.status_code if gpg else "",        row_bg, None, False),
+                # 12 Arrival Date
                 (arrival,                               row_bg, None, False),
-                # 12 Client Account
+                # 13 Client Account
                 (client,                                row_bg, None, False),
-                # 13 Notes
+                # 14 Notes
                 ("; ".join(r.discrepancies),            row_bg, None, False),
             ]
 
