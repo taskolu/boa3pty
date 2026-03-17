@@ -95,18 +95,31 @@ class ArchiveManager:
                     ])
 
         filepath = self._filename(dt, counterparty)
-        # Write to a temp file first, then move — avoids partial-write issues
-        # and is more resilient to OneDrive sync locks on the destination.
+        # Write to system temp dir (outside OneDrive) so OneDrive cannot grab
+        # the temp file mid-write, then copy to the final OneDrive destination
+        # with retries to handle transient sync locks (WinError 32).
         tmp = tempfile.NamedTemporaryFile(
-            suffix=".xlsx", dir=str(self._path), delete=False
+            suffix=".xlsx", dir=tempfile.gettempdir(), delete=False
         )
         tmp.close()
         try:
             wb.save(tmp.name)
-            shutil.move(tmp.name, str(filepath))
-        except Exception:
-            os.unlink(tmp.name)
-            raise
+            last_err = None
+            for _ in range(5):
+                try:
+                    shutil.copy2(tmp.name, str(filepath))
+                    last_err = None
+                    break
+                except OSError as e:
+                    last_err = e
+                    time.sleep(1.0)
+            if last_err:
+                raise last_err
+        finally:
+            try:
+                os.unlink(tmp.name)
+            except OSError:
+                pass
 
     def load_daily(self, dt: date, counterparty: str) -> Optional[dict]:
         filepath = self._filename(dt, counterparty)
