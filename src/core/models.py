@@ -13,6 +13,7 @@ class MatchStatus(Enum):
     RESOLVED_FROM_ARCHIVE = "resolved_from_archive"
     AMOUNT_MISMATCH = "amount_mismatch"
     CURRENCY_MISMATCH = "currency_mismatch"
+    VALUE_DATE_MISMATCH = "value_date_mismatch"
 
 
 @dataclass

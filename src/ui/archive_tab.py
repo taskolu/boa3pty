@@ -18,13 +18,14 @@ _KEY_HDR_BG = QColor("#3a2a00")
 _GPG_HDR_BG = QColor("#1a3a1a")
 
 _STATUS_BG = {
-    "matched":              QColor("#152815"),
-    "unmatched_gpg":        QColor("#301010"),
-    "unmatched_ws":         QColor("#2a1800"),
-    "flagged_dt06":         QColor("#181828"),
-    "resolved_from_archive":QColor("#152015"),
-    "amount_mismatch":      QColor("#2a1200"),
-    "currency_mismatch":    QColor("#2a1200"),
+    "matched":               QColor("#152815"),
+    "unmatched_gpg":         QColor("#301010"),
+    "unmatched_ws":          QColor("#2a1800"),
+    "flagged_dt06":          QColor("#181828"),
+    "resolved_from_archive": QColor("#152015"),
+    "amount_mismatch":       QColor("#2a1200"),
+    "currency_mismatch":     QColor("#2a1200"),
+    "value_date_mismatch":   QColor("#1a1a2e"),
 }
 _STATUS_FG = {
     "matched":               QColor("#4caf50"),
@@ -34,6 +35,7 @@ _STATUS_FG = {
     "resolved_from_archive": QColor("#81c784"),
     "amount_mismatch":       QColor("#ff7043"),
     "currency_mismatch":     QColor("#ff7043"),
+    "value_date_mismatch":   QColor("#ce93d8"),
 }
 _STATUS_LABEL = {
     "matched":               "✓  Matched",
@@ -43,6 +45,7 @@ _STATUS_LABEL = {
     "resolved_from_archive": "↩  Resolved",
     "amount_mismatch":       "$  Amt Mismatch",
     "currency_mismatch":     "€  Ccy Mismatch",
+    "value_date_mismatch":   "📅  Date Mismatch",
 }
 
 # Same columns as Reconcile tab
@@ -251,9 +254,76 @@ class ArchiveTab(QWidget):
                 amt = 0.0
             return (is_matched, ccy, amt)
 
-        self._current_rows = sorted(rows, key=_sort_key)
+        rows = sorted(rows, key=_sort_key)
+
+        # Forward DT06 lookup: for any DT06 row, scan later archive dates
+        # to find whether the deal was eventually resolved
+        rows = self._annotate_dt06_resolution(rows, chosen_date, am)
+
+        self._current_rows = rows
         self._populate_table(self._current_rows)
         self.btn_export.setEnabled(bool(self._current_rows))
+
+    def _annotate_dt06_resolution(self, rows: list[dict], current_date: str,
+                                   am: ArchiveManager) -> list[dict]:
+        """For DT06 rows, scan later archive files to find resolution outcome.
+        Appends a note like '→ Matched on 19-Mar' or '→ Date Mismatch on 19-Mar' to Discrepancies.
+        """
+        # Find confirmation numbers that are DT06 in the current file
+        dt06_confs = {
+            str(r.get("Confirmation#", "") or "")
+            for r in rows
+            if str(r.get("Status", "")).lower() == "flagged_dt06"
+        }
+        if not dt06_confs:
+            return rows
+
+        # Collect later archive dates (sorted ascending so we find earliest resolution)
+        later_archives = sorted(
+            [a for a in self._archive_list if a["date"] > current_date],
+            key=lambda a: a["date"]
+        )
+
+        # Build resolution map: conf# → "resolved text"
+        resolution_map: dict[str, str] = {}
+        for arch in later_archives:
+            if not dt06_confs - set(resolution_map.keys()):
+                break  # all resolved
+            try:
+                future_rows = am.load_results_sheet(arch["file"])
+            except Exception:
+                continue
+            date_label = arch["date"]  # e.g. "2026-03-19"
+            try:
+                parts = date_label.split("-")
+                from datetime import date as _date
+                import calendar
+                d = _date(int(parts[0]), int(parts[1]), int(parts[2]))
+                date_label = d.strftime("%d-%b")
+            except Exception:
+                pass
+            for fr in future_rows:
+                conf = str(fr.get("Confirmation#", "") or "")
+                if conf in dt06_confs and conf not in resolution_map:
+                    sv = str(fr.get("Status", "")).lower()
+                    label = _STATUS_LABEL.get(sv, sv)
+                    resolution_map[conf] = f"→ {label} on {date_label}"
+
+        if not resolution_map:
+            return rows
+
+        # Annotate rows
+        annotated = []
+        for r in rows:
+            sv = str(r.get("Status", "")).lower()
+            if sv == "flagged_dt06":
+                conf = str(r.get("Confirmation#", "") or "")
+                res = resolution_map.get(conf, "→ Not resolved in later archives")
+                r = dict(r)
+                existing = str(r.get("Discrepancies", "") or "")
+                r["Discrepancies"] = f"{existing}  {res}".strip() if existing else res
+            annotated.append(r)
+        return annotated
 
     def _populate_table(self, rows: list[dict]):
         self.tbl.setRowCount(len(rows))

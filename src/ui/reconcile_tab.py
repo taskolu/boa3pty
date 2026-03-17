@@ -64,6 +64,7 @@ _STATUS_BG = {
     MatchStatus.RESOLVED_FROM_ARCHIVE.value: QColor("#152015"),
     MatchStatus.AMOUNT_MISMATCH.value:       QColor("#2a1200"),
     MatchStatus.CURRENCY_MISMATCH.value:     QColor("#2a1200"),
+    MatchStatus.VALUE_DATE_MISMATCH.value:   QColor("#1a1a2e"),
 }
 
 _STATUS_LABEL = {
@@ -74,6 +75,7 @@ _STATUS_LABEL = {
     MatchStatus.RESOLVED_FROM_ARCHIVE.value: "↩  Resolved",
     MatchStatus.AMOUNT_MISMATCH.value:       "$  Amt Mismatch",
     MatchStatus.CURRENCY_MISMATCH.value:     "€  Ccy Mismatch",
+    MatchStatus.VALUE_DATE_MISMATCH.value:   "📅  Date Mismatch",
 }
 
 _STATUS_FG = {
@@ -84,6 +86,7 @@ _STATUS_FG = {
     MatchStatus.RESOLVED_FROM_ARCHIVE.value: QColor("#81c784"),
     MatchStatus.AMOUNT_MISMATCH.value:       QColor("#ff7043"),
     MatchStatus.CURRENCY_MISMATCH.value:     QColor("#ff7043"),
+    MatchStatus.VALUE_DATE_MISMATCH.value:   QColor("#ce93d8"),
 }
 
 # WS columns (indices), centre col, GPG columns (indices)
@@ -134,7 +137,7 @@ class ReconcileTab(QWidget):
         self.cmb_filter = QComboBox()
         self.cmb_filter.addItems([
             "All", "Matched", "Missing in WS", "Extra in WS",
-            "DT06 Flagged", "Resolved", "Amount Mismatch", "Currency Mismatch",
+            "DT06 Flagged", "Resolved", "Amount Mismatch", "Currency Mismatch", "Date Mismatch",
         ])
         self.cmb_filter.currentIndexChanged.connect(self._apply_filter)
         filter_bar.addWidget(self.cmb_filter)
@@ -277,6 +280,7 @@ class ReconcileTab(QWidget):
             "Resolved":          MatchStatus.RESOLVED_FROM_ARCHIVE.value,
             "Amount Mismatch":   MatchStatus.AMOUNT_MISMATCH.value,
             "Currency Mismatch": MatchStatus.CURRENCY_MISMATCH.value,
+            "Date Mismatch":     MatchStatus.VALUE_DATE_MISMATCH.value,
         }
         status_filter = _filter_map.get(self.cmb_filter.currentText())
         search = self.txt_search.text().lower()
