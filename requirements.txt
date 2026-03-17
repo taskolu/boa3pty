@@ -1,0 +1,4 @@
+pyqt5>=5.15
+openpyxl>=3.1
+pandas>=2.0
+pytest>=7.0
