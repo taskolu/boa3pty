@@ -168,6 +168,11 @@ class ArchiveTab(QWidget):
 
     # ── Data loading ───────────────────────────────────────────────────
 
+    def showEvent(self, event):
+        """Re-scan the archive folder every time the tab becomes visible."""
+        super().showEvent(event)
+        self.refresh()
+
     def reload_config(self):
         self.refresh()
 
