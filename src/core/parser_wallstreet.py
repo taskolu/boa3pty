@@ -149,9 +149,24 @@ def parse_wallstreet_paste(
         idx = _resolve_col_idx(headers_lower, field_key, col_name)
         col_indices[field_key] = idx
 
+    # Detect row-number offset: WallStreet header row may omit the leading
+    # row-index cell that appears in every data row (e.g. "1", "2" …).
+    # Check the first data line: if its first cell is a digit and the header's
+    # first cell is NOT a digit/empty, all col_indices need +1.
+    row_offset = 0
+    data_lines_after = [l for l in lines[header_line_idx + 1:] if l.strip()]
+    if data_lines_after:
+        first_data_cell = data_lines_after[0].split("\t")[0].strip()
+        first_header_cell = raw_headers[0].strip() if raw_headers else ""
+        if first_data_cell.isdigit() and not first_header_cell.isdigit():
+            row_offset = 1
+
     def get(cells: list[str], field_key: str) -> str:
         idx = col_indices.get(field_key)
-        if idx is None or idx >= len(cells):
+        if idx is None:
+            return ""
+        idx += row_offset
+        if idx >= len(cells):
             return ""
         return cells[idx].strip()
 
@@ -166,7 +181,7 @@ def parse_wallstreet_paste(
     #   - Heuristic: if the number of continuation cells == number of missing
     #     columns, it is a column overflow → append all. Otherwise it is a
     #     broken cell → glue first cell, append the rest.
-    expected_cols = len(raw_headers)  # includes the empty leading row-# header
+    expected_cols = len(raw_headers) + row_offset
     raw_data_lines = [l for l in lines[header_line_idx + 1:] if l.strip()]
     merged_data_lines: list[str] = []
     for line in raw_data_lines:

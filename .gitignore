@@ -1,0 +1,10 @@
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+archive/
+uploads/
+*.log
+
+# Local config — each user has their own counterparties, don't overwrite on pull
+config.json
