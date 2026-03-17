@@ -80,6 +80,7 @@ class ArchiveTab(QWidget):
         self._archive_list: list[dict] = []   # [{date, counterparty, file}]
         self._current_rows: list[dict] = []
         self._last_refresh: float = 0.0       # epoch seconds of last refresh
+        self._loaded_filepath: str = ""        # filepath of currently cached rows
         self._init_ui()
         self.refresh()
 
@@ -184,6 +185,7 @@ class ArchiveTab(QWidget):
 
     def refresh(self):
         self._last_refresh = time.monotonic()
+        self._loaded_filepath = ""  # invalidate cache so data is re-read
         try:
             archive_path = resolve_archive_path(self.config.archive_path)
             am = ArchiveManager(archive_path)
@@ -239,6 +241,12 @@ class ArchiveTab(QWidget):
         if not filepath:
             return
 
+        # Return cached data if the same file is already loaded
+        if filepath == self._loaded_filepath and self._current_rows:
+            self._populate_table(self._current_rows)
+            self.btn_export.setEnabled(True)
+            return
+
         try:
             archive_path = resolve_archive_path(self.config.archive_path)
             am = ArchiveManager(archive_path)
@@ -265,6 +273,7 @@ class ArchiveTab(QWidget):
         rows = self._annotate_dt06_resolution(rows, chosen_date, am)
 
         self._current_rows = rows
+        self._loaded_filepath = filepath
         self._populate_table(self._current_rows)
         self.btn_export.setEnabled(bool(self._current_rows))
 
