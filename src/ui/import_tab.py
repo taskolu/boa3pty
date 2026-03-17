@@ -8,50 +8,54 @@ from PyQt5.QtWidgets import (
 from PyQt5.QtCore import Qt, pyqtSignal
 from PyQt5.QtGui import QFont
 
-from src.core.parser_gpg import parse_gpg_csv
+from src.core.parser_gpg import parse_gpg_file, parse_gpg_csv, _read_rows
 from src.core.parser_wallstreet import parse_wallstreet_paste, get_detected_ws_headers
 
 # ── Column auto-detection: maps standard field → list of known aliases ─────────
 _GPG_ALIASES = {
     "payment_id": [
-        "payment id", "pay id", "payid", "id", "payment_id",
-        "transaction id", "txn id", "transaction reference",
+        "source system payment id",    # Convera XLS — same as confirmation_number
+        "payment id", "pay id", "payid", "payment_id",
+        "transaction id", "txn id",
     ],
     "confirmation_number": [
-        "source system payment id",                # primary Convera GPG key
-        "transaction reference",                   # GPG Convera format
+        "source system payment id",    # Convera XLS primary key (matches WS Ext Deal #)
+        "transaction reference",       # GPG Convera CSV format
         "confirmation number", "confirm number", "conf number", "conf#",
         "payment reference", "payment ref",
         "external ref", "ext ref",
-        "source payment id",
     ],
     "buy_currency": [
-        "currency", "ccy", "buy currency", "buy ccy", "pay currency",
-        "payment currency", "currency code",
-        "currency pair",                            # GPG Convera format (fallback)
+        "currency_code",               # Convera XLS
+        "currency", "ccy", "buy currency", "buy ccy",
+        "pay currency", "payment currency", "currency code",
     ],
     "buy_amount": [
-        "amount", "pay amount", "payment amount", "value", "buy amount",
+        "amount",                      # Convera XLS
+        "pay amount", "payment amount", "value", "buy amount",
     ],
     "value_date": [
+        "value_date_in_utc",           # Convera XLS
         "value date", "settlement date", "vdate", "value_date",
-        "settle date", "date",
-        "value date",                               # already covered, explicit
-        "book date",                                # GPG Convera format fallback
+        "settle date", "book date",
     ],
     "status_code": [
+        "payment_status",              # Convera XLS (ACCEPTED / REJECTED / etc.)
+        "error_code",                  # Convera XLS DT06 code
         "status information/error", "status information", "status",
-        "error", "error code", "dt06", "status code", "rejection",
-        "category",                                 # GPG Convera format (may carry rejection info)
+        "error", "status code", "rejection",
     ],
 }
 
 _DATE_FORMATS = ["%Y-%m-%d", "%d/%m/%Y", "%m/%d/%Y", "%d-%m-%Y",
                  "%d %b %Y", "%d-%b-%Y", "%Y/%m/%d"]
 
-_BANK_CODE_ALIASES = ["bank code", "bank", "counterparty code", "cp code",
-                      "entity", "institution code", "code",
-                      "counterparty account", "counterparty name"]
+_BANK_CODE_ALIASES = [
+    "inventory_code",          # Convera XLS (e.g. ALLCUKBOA, MGACUKBOA)
+    "bank code", "bank", "counterparty code", "cp code",
+    "entity", "institution code", "code",
+    "counterparty account", "counterparty name",
+]
 
 
 def _normalise(s: str) -> str:
@@ -89,21 +93,35 @@ def _detect_date_format(sample_value: str) -> str:
     return "%Y-%m-%d"
 
 
-def _sniff_csv(path: str) -> tuple[list[str], list[dict], str]:
-    """Read headers and first few rows from CSV. Auto-detects delimiter (comma or semicolon)."""
+def _sniff_file(path: str) -> tuple[list[str], list[dict], str]:
+    """Read headers and first few rows from CSV, XLS, or XLSX.
+
+    Returns (headers, sample_rows, delimiter).
+    delimiter is ',' for Excel files (unused by the Excel reader).
+    """
+    from pathlib import Path
+    ext = Path(path).suffix.lower()
+
+    if ext in (".xls", ".xlsx", ".xlsm"):
+        rows, headers = _read_rows(path)
+        return headers, rows[:5], ","
+
+    # CSV: auto-detect delimiter
     with open(path, "r", encoding="utf-8-sig") as f:
         sample = f.read(2048)
-
-    # Detect delimiter: tab, semicolon, or comma — whichever appears most in first line
     first_line = sample.splitlines()[0] if sample else ""
     counts = {"\t": first_line.count("\t"), ";": first_line.count(";"), ",": first_line.count(",")}
     delimiter = max(counts, key=counts.get)
-
     with open(path, "r", encoding="utf-8-sig") as f:
         reader = csv.DictReader(f, delimiter=delimiter)
-        headers = reader.fieldnames or []
+        headers = list(reader.fieldnames or [])
         rows = [row for _, row in zip(range(5), reader)]
-    return list(headers), rows, delimiter
+    return headers, rows, delimiter
+
+
+# keep old name for any callers
+def _sniff_csv(path: str) -> tuple[list[str], list[dict], str]:
+    return _sniff_file(path)
 
 
 class ImportTab(QWidget):
@@ -193,7 +211,8 @@ class ImportTab(QWidget):
 
     def _browse_csv(self):
         path, _ = QFileDialog.getOpenFileName(
-            self, "Open GPG CSV", "", "CSV Files (*.csv);;All Files (*)"
+            self, "Open GPG File", "",
+            "GPG Reports (*.csv *.xls *.xlsx);;CSV Files (*.csv);;Excel Files (*.xls *.xlsx);;All Files (*)"
         )
         if not path:
             return
@@ -202,8 +221,12 @@ class ImportTab(QWidget):
         for cp_name in self.config.counterparty_names:
             cp = self.config.get_counterparty(cp_name)
             try:
-                records, bank_code = parse_gpg_csv(
+                bank_col = _detect_bank_code_column(
+                    _sniff_file(path)[0]
+                ) or "inventory_code"
+                records, bank_code = parse_gpg_file(
                     path, cp["csv_column_mapping"], cp["date_format"],
+                    bank_code_column=bank_col,
                 )
                 if bank_code and self.config.find_by_bank_code(bank_code):
                     self._load_gpg_success(records, cp_name, bank_code, path)
@@ -217,7 +240,7 @@ class ImportTab(QWidget):
     def _auto_detect_and_load(self, path: str):
         """Read CSV headers, auto-map columns, auto-create counterparty config."""
         try:
-            headers, sample_rows, delimiter = _sniff_csv(path)
+            headers, sample_rows, delimiter = _sniff_file(path)
         except Exception as e:
             QMessageBox.critical(self, "Read Error", f"Could not read CSV:\n{e}")
             return
@@ -263,8 +286,9 @@ class ImportTab(QWidget):
 
         # Try to parse with auto-detected mapping
         try:
-            records, detected_code = parse_gpg_csv(
-                path, col_mapping, date_format, bank_code_col or "Bank Code",
+            records, detected_code = parse_gpg_file(
+                path, col_mapping, date_format,
+                bank_code_column=bank_code_col or "inventory_code",
                 delimiter=delimiter,
             )
         except Exception as e:
