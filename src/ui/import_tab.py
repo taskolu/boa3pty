@@ -19,11 +19,11 @@ _GPG_ALIASES = {
     ],
     "confirmation_number": [
         "source system payment id",                # primary Convera GPG key
-        "payment reference", "reference", "ref", "confirmation",
-        "confirm number", "conf#", "conf number", "confirmation number",
-        "payment ref", "conf", "ext ref", "external ref",
         "transaction reference",                   # GPG Convera format
-        "source ref", "source id", "source payment id",
+        "confirmation number", "confirm number", "conf number", "conf#",
+        "payment reference", "payment ref",
+        "external ref", "ext ref",
+        "source payment id",
     ],
     "buy_currency": [
         "currency", "ccy", "buy currency", "buy ccy", "pay currency",
