@@ -30,24 +30,25 @@ from src.export.report_generator import generate_payment_breakdown
 
 _HEADERS = [
     "Status",
-    "USD Amount",        # WS pay
-    "Ccy",              # WS rec ccy
-    "Exotic Amount",    # WS rec amt
+    "Value Date",       # WS value_date
+    "Pay Currency",     # WS pay_ccy
+    "Pay Amount",       # WS pay_amount
     "Rate",
-    "WS Value Date",
+    "Buy Ccy",          # WS rec_ccy
+    "Buy Amount",       # WS rec_amount
     "WS Deal #",        # WS wallstreet_ref
     "Conf # / Ext Deal #",   # centre — matching key
-    "Currency",         # GPG
-    "GPG Amount",       # GPG
-    "GPG Value Date",   # GPG
-    "GPG Status",       # GPG
-    "Arrival Date",     # GPG raw
-    "Client Account",   # GPG raw
+    "GPG Status",
+    "GPG Value Date",
+    "GPG Amount",
+    "Currency",
+    "Client Account",
+    "Arrival Date",
     "Notes",
 ]
 
 # Column index of the matching key
-_CONF_COL = 7
+_CONF_COL = 8
 
 # Header background per section
 _WS_HEADER_BG   = QColor("#1a2a3a")   # dark blue
@@ -86,8 +87,8 @@ _STATUS_FG = {
 }
 
 # WS columns (indices), centre col, GPG columns (indices)
-_WS_COLS  = [1, 2, 3, 4, 5, 6]
-_GPG_COLS = [8, 9, 10, 11, 12, 13, 14]
+_WS_COLS  = [1, 2, 3, 4, 5, 6, 7]
+_GPG_COLS = [9, 10, 11, 12, 13, 14, 15]
 
 
 class ReconcileTab(QWidget):
@@ -324,35 +325,37 @@ class ReconcileTab(QWidget):
             row_data = [
                 # 0  Status
                 (_STATUS_LABEL.get(sv, sv), row_bg, status_fg, True),
-                # 1  WS USD Amount
+                # 1  Value Date (WS)
+                (ws.value_date.strftime("%d %b %Y") if ws else "", row_bg, None, False),
+                # 2  Pay Currency (WS pay_ccy)
+                (ws.pay_ccy if ws else "",              row_bg, None, False),
+                # 3  Pay Amount (WS pay_amount)
                 (str(ws.pay_amount) if ws else "",      row_bg, None, False),
-                # 2  WS Rec Ccy
-                (ws.rec_ccy if ws else "",              row_bg, None, False),
-                # 3  WS Rec Amount
-                (str(ws.rec_amount) if ws else "",      row_bg, None, False),
                 # 4  Rate
                 (str(ws.rate) if ws else "",            row_bg, None, False),
-                # 5  WS Value Date
-                (ws.value_date.strftime("%d %b %Y") if ws else "", row_bg, None, False),
-                # 6  WS Deal #
+                # 5  Buy Ccy (WS rec_ccy)
+                (ws.rec_ccy if ws else "",              row_bg, None, False),
+                # 6  Buy Amount (WS rec_amount)
+                (str(ws.rec_amount) if ws else "",      row_bg, None, False),
+                # 7  WS Deal #
                 (ws.wallstreet_ref if ws else "",       row_bg, None, False),
-                # 7  CONF # (centre key) — green when matched, amber otherwise
+                # 8  CONF # — green when matched, amber otherwise
                 (conf,  key_bg,
                  QColor("#4caf50") if sv == MatchStatus.MATCHED.value else QColor("#ffc107"),
                  True),
-                # 8  GPG Currency
-                (gpg.buy_currency if gpg else "",       row_bg, None, False),
-                # 9  GPG Amount
-                (str(gpg.buy_amount) if gpg else "",    row_bg, None, False),
+                # 9  GPG Status
+                (gpg.status_code if gpg else "",        row_bg, None, False),
                 # 10 GPG Value Date
                 (gpg.value_date.strftime("%d %b %Y") if gpg else "", row_bg, None, False),
-                # 11 GPG Status
-                (gpg.status_code if gpg else "",        row_bg, None, False),
-                # 12 Arrival Date
-                (arrival,                               row_bg, None, False),
+                # 11 GPG Amount
+                (str(gpg.buy_amount) if gpg else "",    row_bg, None, False),
+                # 12 Currency (GPG)
+                (gpg.buy_currency if gpg else "",       row_bg, None, False),
                 # 13 Client Account
                 (client,                                row_bg, None, False),
-                # 14 Notes
+                # 14 Arrival Date
+                (arrival,                               row_bg, None, False),
+                # 15 Notes
                 ("; ".join(r.discrepancies),            row_bg, None, False),
             ]
 
