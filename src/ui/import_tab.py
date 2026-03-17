@@ -15,16 +15,18 @@ from src.core.parser_wallstreet import parse_wallstreet_paste
 _GPG_ALIASES = {
     "payment_id": [
         "payment id", "pay id", "payid", "id", "payment_id",
-        "transaction id", "txn id",
+        "transaction id", "txn id", "transaction reference",
     ],
     "confirmation_number": [
         "payment reference", "reference", "ref", "confirmation",
         "confirm number", "conf#", "conf number", "confirmation number",
         "payment ref", "conf", "ext ref", "external ref",
+        "transaction reference",                   # GPG Convera format
     ],
     "buy_currency": [
         "currency", "ccy", "buy currency", "buy ccy", "pay currency",
         "payment currency", "currency code",
+        "currency pair",                            # GPG Convera format (fallback)
     ],
     "buy_amount": [
         "amount", "pay amount", "payment amount", "value", "buy amount",
@@ -32,10 +34,13 @@ _GPG_ALIASES = {
     "value_date": [
         "value date", "settlement date", "vdate", "value_date",
         "settle date", "date",
+        "value date",                               # already covered, explicit
+        "book date",                                # GPG Convera format fallback
     ],
     "status_code": [
         "status information/error", "status information", "status",
         "error", "error code", "dt06", "status code", "rejection",
+        "category",                                 # GPG Convera format (may carry rejection info)
     ],
 }
 
@@ -43,7 +48,8 @@ _DATE_FORMATS = ["%Y-%m-%d", "%d/%m/%Y", "%m/%d/%Y", "%d-%m-%Y",
                  "%d %b %Y", "%d-%b-%Y", "%Y/%m/%d"]
 
 _BANK_CODE_ALIASES = ["bank code", "bank", "counterparty code", "cp code",
-                      "entity", "institution code", "code"]
+                      "entity", "institution code", "code",
+                      "counterparty account", "counterparty name"]
 
 
 def _normalise(s: str) -> str:
