@@ -22,7 +22,12 @@ class ConfigManager:
         return list(self._data.get("counterparties", {}).keys())
 
     def get_counterparty(self, name: str) -> dict:
-        return self._data["counterparties"][name]
+        return self._data["counterparties"].get(name, {})
+
+    def get_display_name(self, name: str) -> str:
+        """Return display_name if configured, otherwise the internal key name."""
+        cp = self._data.get("counterparties", {}).get(name, {})
+        return cp.get("display_name") or name
 
     def find_by_bank_code(self, code: str) -> Optional[str]:
         for name, cp in self._data.get("counterparties", {}).items():

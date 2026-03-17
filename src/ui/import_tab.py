@@ -336,11 +336,12 @@ class ImportTab(QWidget):
                            auto_created=False):
         self.gpg_records = records
         self.detected_counterparty = cp_name
+        display = self.config.get_display_name(cp_name)
         note = " (auto-detected)" if auto_created else ""
         self.lbl_gpg_info.setText(
             f"File: {path}\n"
             f"Records: {len(records)}\n"
-            f"Counterparty: {cp_name} (code: {bank_code}){note}"
+            f"Counterparty: {display} (code: {bank_code}){note}"
         )
         self._populate_gpg_preview()
         self._check_ready()

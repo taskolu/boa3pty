@@ -130,7 +130,11 @@ class CounterpartyDialog(QDialog):
         form = QFormLayout()
 
         self.txt_name = QLineEdit(name)
-        form.addRow("Name:", self.txt_name)
+        form.addRow("Internal Name:", self.txt_name)
+
+        self.txt_display_name = QLineEdit(config.get("display_name", ""))
+        self.txt_display_name.setPlaceholderText("e.g. BOA3PTY  (shown in UI and archive filenames)")
+        form.addRow("Display Name:", self.txt_display_name)
 
         self.txt_bank_code = QLineEdit(config.get("csv_bank_code", ""))
         form.addRow("CSV Bank Code:", self.txt_bank_code)
@@ -226,6 +230,7 @@ class CounterpartyDialog(QDialog):
         return {
             "name": self.txt_name.text().strip(),
             "config": {
+                "display_name": self.txt_display_name.text().strip(),
                 "csv_bank_code": self.txt_bank_code.text().strip(),
                 "wallstreet_counterparty_name": self.txt_ws_name.text().strip(),
                 "csv_column_mapping": csv_map,

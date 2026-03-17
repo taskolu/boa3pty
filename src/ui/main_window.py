@@ -92,14 +92,14 @@ class MainWindow(QMainWindow):
         self._current_results = results
         self._current_counterparty = counterparty_name
 
-        self.reconcile_tab.load_results(results, counterparty_name)
+        display_name = self.config.get_display_name(counterparty_name)
+        self.reconcile_tab.load_results(results, display_name)
         self.tabs.setCurrentWidget(self.reconcile_tab)
 
         matched = sum(1 for r in results if r.status.value == "matched")
         total = len(results)
         self.statusBar().showMessage(
-            f"Reconciliation complete: {matched}/{total} matched "
-            f"for {counterparty_name}"
+            f"Reconciliation complete: {matched}/{total} matched for {display_name}"
         )
 
     def _save_to_archive(self, value_date: date, counterparty_display: str = ""):
