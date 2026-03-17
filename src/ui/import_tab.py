@@ -1,5 +1,6 @@
 import csv
 from datetime import datetime
+from typing import Optional
 from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
     QTextEdit, QTableWidget, QTableWidgetItem, QFileDialog,
