@@ -211,8 +211,9 @@ class ImportTab(QWidget):
     # ── GPG CSV loading ────────────────────────────────────────────
 
     def _browse_csv(self):
+        downloads = os.path.join(os.path.expanduser("~"), "Downloads")
         path, _ = QFileDialog.getOpenFileName(
-            self, "Open GPG File", "",
+            self, "Open GPG File", downloads,
             "GPG Reports (*.csv *.xls *.xlsx);;CSV Files (*.csv);;Excel Files (*.xls *.xlsx);;All Files (*)"
         )
         if not path:
