@@ -137,7 +137,8 @@ class CounterpartyDialog(QDialog):
         form.addRow("Display Name:", self.txt_display_name)
 
         self.txt_bank_code = QLineEdit(config.get("csv_bank_code", ""))
-        form.addRow("CSV Bank Code:", self.txt_bank_code)
+        self.txt_bank_code.setPlaceholderText("e.g. ALLCUKBOA, MGACUKBOA (comma-separated)")
+        form.addRow("CSV Bank Code(s):", self.txt_bank_code)
 
         self.txt_ws_name = QLineEdit(config.get("wallstreet_counterparty_name", ""))
         form.addRow("WallStreet Customer Name:", self.txt_ws_name)

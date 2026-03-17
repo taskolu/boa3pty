@@ -30,8 +30,11 @@ class ConfigManager:
         return cp.get("display_name") or name
 
     def find_by_bank_code(self, code: str) -> Optional[str]:
+        """Match code against csv_bank_code (exact) or a comma-separated list of codes."""
         for name, cp in self._data.get("counterparties", {}).items():
-            if cp.get("csv_bank_code") == code:
+            stored = cp.get("csv_bank_code", "")
+            codes = [c.strip() for c in stored.split(",") if c.strip()]
+            if code in codes:
                 return name
         return None
 
