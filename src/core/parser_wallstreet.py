@@ -102,6 +102,7 @@ def _parse_date(raw: str) -> object:
 def parse_wallstreet_paste(
     pasted_text: str,
     col_map_override: Optional[dict] = None,
+    ignored_currencies: Optional[list] = None,
 ) -> tuple[list[WSEntry], Optional[str]]:
     """Parse tab-separated WallStreet data from clipboard paste.
 
@@ -110,10 +111,12 @@ def parse_wallstreet_paste(
 
     col_map_override: dict of {field_key: column_header_name} to override
                       any of the DEFAULT_WS_COLUMNS entries.
+    ignored_currencies: list of rec_ccy values (e.g. ["JPY", "INR"]) to skip.
 
     Returns (list of WSEntry, detected counterparty name).
     Deduplicates rows by external_ref (Ext Deal #).
     """
+    _ignored = {c.upper() for c in (ignored_currencies or [])}
     mapping = {**DEFAULT_WS_COLUMNS, **(col_map_override or {})}
 
     text = pasted_text.strip()
@@ -221,6 +224,10 @@ def parse_wallstreet_paste(
         deal_type = get(cells, "deal_type")
         if deal_type and deal_type.upper() not in ("FX", "SPOT", "FORWARD", ""):
             continue  # Skip non-FX rows (NDF, SWAP, etc.)
+
+        rec_ccy_raw = get(cells, "rec_ccy").upper()
+        if _ignored and rec_ccy_raw in _ignored:
+            continue  # Skip ignored currencies
 
         counterparty = get(cells, "counterparty")
         if detected_counterparty is None and counterparty:

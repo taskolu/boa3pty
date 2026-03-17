@@ -40,6 +40,17 @@ class SettingsTab(QWidget):
     def _init_ui(self):
         layout = QVBoxLayout(self)
 
+        # Ignored currencies
+        ccy_group = QGroupBox("Ignored Currencies (WallStreet paste filter)")
+        ccy_lay = QVBoxLayout(ccy_group)
+        self.txt_ignored_ccy = QLineEdit(", ".join(self.config.ignored_currencies))
+        self.txt_ignored_ccy.setPlaceholderText("e.g. JPY, INR, CLP  (comma-separated, case-insensitive)")
+        ccy_lay.addWidget(self.txt_ignored_ccy)
+        ccy_lbl = QLabel("Rows where Rec Ccy matches any of these will be skipped on paste.")
+        ccy_lbl.setStyleSheet("color: #aaaaaa; font-size: 9px;")
+        ccy_lay.addWidget(ccy_lbl)
+        layout.addWidget(ccy_group)
+
         # Archive path
         arch_group = QGroupBox("Archive Path (OneDrive folder)")
         arch_vlay = QVBoxLayout(arch_group)
@@ -156,6 +167,8 @@ class SettingsTab(QWidget):
     def _save(self):
         if not self._check_auth():
             return
+        raw_ccy = self.txt_ignored_ccy.text()
+        self.config.ignored_currencies = [c.strip() for c in raw_ccy.split(",") if c.strip()]
         self.config.archive_path = self.txt_archive_path.text().strip()
         self.config.save()
         self.settings_saved.emit()

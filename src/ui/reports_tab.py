@@ -59,7 +59,8 @@ class ReportsTab(QWidget):
     def _populate_counterparties(self):
         self.cmb_cp.clear()
         for name in self.config.counterparty_names:
-            self.cmb_cp.addItem(name)
+            display = self.config.get_display_name(name)
+            self.cmb_cp.addItem(display)
 
     def _export(self):
         cp_name = self.cmb_cp.currentText()

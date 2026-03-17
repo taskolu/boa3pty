@@ -14,6 +14,16 @@ class ConfigManager:
         # Default ".." = folder above Settings/ = BOA3PTY Archive/ on OneDrive
         return self._data.get("archive_path", "..")
 
+    @property
+    def ignored_currencies(self) -> list[str]:
+        """Upper-cased currency codes to skip when parsing WallStreet paste."""
+        raw = self._data.get("ignored_currencies", "")
+        return [c.strip().upper() for c in raw.split(",") if c.strip()]
+
+    @ignored_currencies.setter
+    def ignored_currencies(self, codes: list[str]):
+        self._data["ignored_currencies"] = ", ".join(c.upper() for c in codes)
+
     @archive_path.setter
     def archive_path(self, value: str):
         self._data["archive_path"] = value

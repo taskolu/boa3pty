@@ -379,7 +379,9 @@ class ImportTab(QWidget):
             col_override = cp.get("wallstreet_column_mapping", {})
 
         try:
-            entries, ws_cp = parse_wallstreet_paste(text, col_override)
+            entries, ws_cp = parse_wallstreet_paste(
+                text, col_override, self.config.ignored_currencies
+            )
             self.ws_entries = entries
 
             # If counterparty was auto-created with blank ws_name, fill it in now

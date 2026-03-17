@@ -1,4 +1,5 @@
 from __future__ import annotations
+import time
 from datetime import date
 from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
@@ -78,6 +79,7 @@ class ArchiveTab(QWidget):
         self.config = config_manager
         self._archive_list: list[dict] = []   # [{date, counterparty, file}]
         self._current_rows: list[dict] = []
+        self._last_refresh: float = 0.0       # epoch seconds of last refresh
         self._init_ui()
         self.refresh()
 
@@ -172,14 +174,16 @@ class ArchiveTab(QWidget):
     # ── Data loading ───────────────────────────────────────────────────
 
     def showEvent(self, event):
-        """Re-scan the archive folder every time the tab becomes visible."""
+        """Re-scan the archive folder when tab becomes visible, at most once per 30 s."""
         super().showEvent(event)
-        self.refresh()
+        if time.monotonic() - self._last_refresh >= 30.0:
+            self.refresh()
 
     def reload_config(self):
         self.refresh()
 
     def refresh(self):
+        self._last_refresh = time.monotonic()
         try:
             archive_path = resolve_archive_path(self.config.archive_path)
             am = ArchiveManager(archive_path)
