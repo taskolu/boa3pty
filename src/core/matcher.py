@@ -1,5 +1,8 @@
 from __future__ import annotations
+from decimal import Decimal
 from src.core.models import GPGPayment, WSEntry, MatchResult, MatchStatus
+
+_AMOUNT_TOLERANCE = Decimal("0.01")
 
 # Priority for sorting results: lower number = shown first (problems at top)
 _STATUS_PRIORITY = {
@@ -47,8 +50,8 @@ def reconcile(
                         f"currency: GPG={gpg.buy_currency}, WS={ws.rec_ccy}"
                     ],
                 ))
-            # Then check amount
-            elif gpg.buy_amount != ws.rec_amount:
+            # Then check amount (0.01 tolerance)
+            elif abs(gpg.buy_amount - ws.rec_amount) > _AMOUNT_TOLERANCE:
                 results.append(MatchResult(
                     status=MatchStatus.AMOUNT_MISMATCH,
                     gpg_record=gpg,
@@ -63,6 +66,11 @@ def reconcile(
                 # WS date < GPG date = should never happen (real data error)
                 # WS date == GPG date = perfect match
                 discrepancies = []
+                diff = abs(gpg.buy_amount - ws.rec_amount)
+                if diff > Decimal("0"):
+                    discrepancies.append(
+                        f"Amount diff {diff} within 0.01 tolerance"
+                    )
                 if ws.value_date > gpg.value_date:
                     discrepancies.append(
                         f"Bank amended value date: GPG={gpg.value_date.strftime('%d %b %Y')}"

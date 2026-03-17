@@ -167,6 +167,45 @@ class ArchiveManager:
                 time.sleep(1.5)
         raise last_err
 
+    def log_action(self, action: str, counterparty: str,
+                   value_date: Optional[date] = None, details: str = ""):
+        """Append a row to audit_log.xlsx in the archive folder."""
+        import getpass
+        from datetime import datetime as _dt
+        log_path = self._path / "audit_log.xlsx"
+        try:
+            user = getpass.getuser()
+        except Exception:
+            user = "unknown"
+        timestamp = _dt.now().strftime("%Y-%m-%d %H:%M:%S")
+        vd_str = value_date.isoformat() if value_date else ""
+
+        if log_path.exists():
+            wb = load_workbook(str(log_path))
+            ws = wb.active
+        else:
+            wb = Workbook()
+            ws = wb.active
+            ws.title = "Audit Log"
+            ws.append(["Timestamp", "User", "Action", "Counterparty", "ValueDate", "Details"])
+
+        ws.append([timestamp, user, action, counterparty, vd_str, details])
+
+        tmp = tempfile.NamedTemporaryFile(
+            suffix=".xlsx", dir=tempfile.gettempdir(), delete=False
+        )
+        tmp.close()
+        try:
+            wb.save(tmp.name)
+            shutil.copy2(tmp.name, str(log_path))
+        except Exception:
+            pass
+        finally:
+            try:
+                os.unlink(tmp.name)
+            except OSError:
+                pass
+
     def list_archives(self) -> list[dict]:
         archives = []
         for f in sorted(self._path.glob("*.xlsx"), reverse=True):

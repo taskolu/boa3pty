@@ -1,7 +1,7 @@
 import os
 from datetime import date
 from PyQt5.QtWidgets import (
-    QMainWindow, QTabWidget, QStatusBar
+    QMainWindow, QTabWidget, QStatusBar, QMessageBox
 )
 from PyQt5.QtGui import QFont, QPalette, QColor
 from PyQt5.QtCore import Qt
@@ -23,6 +23,8 @@ class MainWindow(QMainWindow):
         self.config = config_manager
         self._current_results = []
         self._current_counterparty = None
+        self._result_saved = True   # True = nothing pending; False = unsaved results
+        self._prev_tab_idx = 0
 
         self.setWindowTitle("Payment Reconciler")
         self.setMinimumSize(1280, 800)
@@ -49,6 +51,7 @@ class MainWindow(QMainWindow):
         self.import_tab.reconciliation_requested.connect(self._run_reconciliation)
         self.reconcile_tab.save_to_archive_requested.connect(self._save_to_archive)
         self.settings_tab.settings_saved.connect(self._on_settings_saved)
+        self.tabs.currentChanged.connect(self._on_tab_changed)
 
         self.statusBar().showMessage("Ready")
 
@@ -87,6 +90,7 @@ class MainWindow(QMainWindow):
         results = reconcile(gpg_records, ws_entries, archived_flags)
         self._current_results = results
         self._current_counterparty = counterparty_name
+        self._result_saved = False
 
         display_name = self.config.get_display_name(counterparty_name)
         self.reconcile_tab.load_results(results, display_name)
@@ -105,13 +109,52 @@ class MainWindow(QMainWindow):
         try:
             archive_path = resolve_archive_path(self.config.archive_path)
             am = ArchiveManager(archive_path)
+
+            # Overwrite warning
+            expected = os.path.join(archive_path, f"{value_date.isoformat()}_{label}.xlsx")
+            if os.path.exists(expected):
+                reply = QMessageBox.question(
+                    self, "Archive Already Exists",
+                    f"An archive for {value_date.strftime('%d %b %Y')} / {label} "
+                    f"already exists.\nOverwrite it?",
+                    QMessageBox.Yes | QMessageBox.No
+                )
+                if reply != QMessageBox.Yes:
+                    return
+
             am.save_daily(value_date, label, self._current_results)
+            self._result_saved = True
+
+            # Audit log
+            matched = sum(1 for r in self._current_results if r.is_ok)
+            total = len(self._current_results)
+            try:
+                am.log_action("ARCHIVE_SAVED", label, value_date,
+                              f"{matched}/{total} matched")
+            except Exception:
+                pass
+
             self.archive_tab.refresh()
             self.statusBar().showMessage(
                 f"Saved: {value_date.strftime('%d %b %Y')}_{label}.xlsx"
             )
         except Exception as e:
             self.statusBar().showMessage(f"Archive save failed: {e}")
+
+    def _on_tab_changed(self, new_idx: int):
+        reconcile_idx = self.tabs.indexOf(self.reconcile_tab)
+        leaving_reconcile = (self._prev_tab_idx == reconcile_idx
+                             and new_idx != reconcile_idx)
+        self._prev_tab_idx = new_idx
+
+        if leaving_reconcile and self._current_results and not self._result_saved:
+            reply = QMessageBox.question(
+                self, "Save to Archive?",
+                "You have unsaved reconciliation results.\nSave to archive now?",
+                QMessageBox.Yes | QMessageBox.No
+            )
+            if reply == QMessageBox.Yes:
+                self.reconcile_tab._save_archive()
 
     def _on_settings_saved(self):
         self.statusBar().showMessage("Settings saved.")

@@ -2,7 +2,8 @@ from datetime import date
 from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
     QTableWidget, QTableWidgetItem, QHeaderView, QComboBox,
-    QLineEdit, QFileDialog, QDateEdit, QMessageBox, QGroupBox
+    QLineEdit, QFileDialog, QDateEdit, QMessageBox, QGroupBox,
+    QMenu, QInputDialog, QAction
 )
 from PyQt5.QtCore import Qt, pyqtSignal, QDate
 from PyQt5.QtGui import QColor, QFont, QBrush
@@ -102,6 +103,7 @@ class ReconcileTab(QWidget):
         self.config = config_manager
         self._all_results = []
         self._counterparty = None
+        self._accepted_confs: set[str] = set()   # conf#s manually accepted
         self._init_ui()
 
     # ── UI construction ────────────────────────────────────────────
@@ -170,6 +172,8 @@ class ReconcileTab(QWidget):
         self.tbl = QTableWidget()
         self.tbl.setEditTriggers(QTableWidget.NoEditTriggers)
         self.tbl.setSelectionBehavior(QTableWidget.SelectRows)
+        self.tbl.setContextMenuPolicy(Qt.CustomContextMenu)
+        self.tbl.customContextMenuRequested.connect(self._show_context_menu)
         self.tbl.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeToContents)
         self.tbl.horizontalHeader().setStretchLastSection(True)
         self.tbl.setAlternatingRowColors(False)
@@ -248,6 +252,7 @@ class ReconcileTab(QWidget):
 
         self._all_results = sorted(results, key=_sort_key, reverse=False)
         self._counterparty = counterparty_name
+        self._accepted_confs = set()
         self.btn_save.setEnabled(True)
         self.btn_export.setEnabled(True)
 
@@ -309,9 +314,18 @@ class ReconcileTab(QWidget):
 
         for ri, r in enumerate(results):
             sv = r.status.value
-            row_bg  = _STATUS_BG.get(sv, QColor("#252525"))
-            key_bg  = QColor("#2a1e00") if sv == MatchStatus.MATCHED.value else QColor("#1e1a00")
-            status_fg = _STATUS_FG.get(sv, QColor("white"))
+            conf_key = (r.gpg_record.confirmation_number if r.gpg_record
+                        else r.ws_record.external_ref if r.ws_record else "")
+            is_accepted = conf_key in self._accepted_confs
+
+            if is_accepted:
+                row_bg    = QColor("#0a2020")
+                key_bg    = QColor("#0a2a1a")
+                status_fg = QColor("#4dd0e1")
+            else:
+                row_bg    = _STATUS_BG.get(sv, QColor("#252525"))
+                key_bg    = QColor("#2a1e00") if sv == MatchStatus.MATCHED.value else QColor("#1e1a00")
+                status_fg = _STATUS_FG.get(sv, QColor("white"))
 
             conf = (r.gpg_record.confirmation_number if r.gpg_record
                     else r.ws_record.external_ref if r.ws_record else "")
@@ -324,9 +338,10 @@ class ReconcileTab(QWidget):
             ws = r.ws_record
             gpg = r.gpg_record
 
+            status_display = "✓  Accepted" if is_accepted else _STATUS_LABEL.get(sv, sv)
             row_data = [
                 # 0  Status
-                (_STATUS_LABEL.get(sv, sv), row_bg, status_fg, True),
+                (status_display, row_bg, status_fg, True),
                 # 1  Value Date (WS)
                 (ws.value_date.strftime("%d %b %Y") if ws else "", row_bg, None, False),
                 # 2  Pay Currency (WS pay_ccy)
@@ -372,6 +387,66 @@ class ReconcileTab(QWidget):
                 self.tbl.setItem(ri, ci, item)
 
         self.tbl.resizeColumnsToContents()
+
+    # ── Context menu ───────────────────────────────────────────────
+
+    _ACCEPTABLE_STATUSES = {
+        MatchStatus.AMOUNT_MISMATCH.value,
+        MatchStatus.CURRENCY_MISMATCH.value,
+        MatchStatus.VALUE_DATE_MISMATCH.value,
+        MatchStatus.UNMATCHED_GPG.value,
+    }
+
+    def _show_context_menu(self, pos):
+        row = self.tbl.rowAt(pos.y())
+        if row < 0:
+            return
+        conf_item = self.tbl.item(row, _CONF_COL)
+        if not conf_item:
+            return
+        conf = conf_item.text()
+
+        # Find the underlying result
+        result = None
+        for r in self._all_results:
+            key = (r.gpg_record.confirmation_number if r.gpg_record
+                   else r.ws_record.external_ref if r.ws_record else "")
+            if key == conf:
+                result = r
+                break
+        if not result:
+            return
+
+        already_accepted = conf in self._accepted_confs
+        menu = QMenu(self)
+
+        if result.status.value in self._ACCEPTABLE_STATUSES or already_accepted:
+            if already_accepted:
+                act = menu.addAction("✎  Edit Note…")
+            else:
+                act = menu.addAction("✓  Accept / Add Note…")
+            chosen = menu.exec_(self.tbl.viewport().mapToGlobal(pos))
+            if chosen == act:
+                existing_note = ""
+                for d in result.discrepancies:
+                    if d.startswith("✓ ACCEPTED"):
+                        existing_note = d.split(": ", 1)[-1] if ": " in d else ""
+                        break
+                note, ok = QInputDialog.getText(
+                    self, "Accept / Add Note",
+                    "Reason / note (leave blank if none):",
+                    QLineEdit.Normal, existing_note
+                )
+                if ok:
+                    # Remove old accepted note if present
+                    result.discrepancies = [
+                        d for d in result.discrepancies
+                        if not d.startswith("✓ ACCEPTED")
+                    ]
+                    prefix = f"✓ ACCEPTED: {note}" if note.strip() else "✓ ACCEPTED"
+                    result.discrepancies.insert(0, prefix)
+                    self._accepted_confs.add(conf)
+                    self._apply_filter()
 
     # ── Actions ────────────────────────────────────────────────────
 
