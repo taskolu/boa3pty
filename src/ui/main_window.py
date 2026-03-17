@@ -102,9 +102,10 @@ class MainWindow(QMainWindow):
             f"for {counterparty_name}"
         )
 
-    def _save_to_archive(self, value_date: date):
-        if not self._current_results or not self._current_counterparty:
+    def _save_to_archive(self, value_date: date, counterparty_display: str = ""):
+        if not self._current_results:
             return
+        label = counterparty_display or self._current_counterparty or "UNKNOWN"
         try:
             archive_path = self.config.archive_path
             if not os.path.isabs(archive_path):
@@ -113,10 +114,10 @@ class MainWindow(QMainWindow):
                     "..", "..", archive_path
                 )
             am = ArchiveManager(archive_path)
-            am.save_daily(value_date, self._current_counterparty, self._current_results)
+            am.save_daily(value_date, label, self._current_results)
             self.archive_tab.refresh()
             self.statusBar().showMessage(
-                f"Saved archive: {value_date.isoformat()}_{self._current_counterparty}.xlsx"
+                f"Saved: {value_date.strftime('%d %b %Y')}_{label}.xlsx"
             )
         except Exception as e:
             self.statusBar().showMessage(f"Archive save failed: {e}")
