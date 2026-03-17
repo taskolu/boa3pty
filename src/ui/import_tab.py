@@ -87,13 +87,20 @@ def _detect_date_format(sample_value: str) -> str:
     return "%Y-%m-%d"
 
 
-def _sniff_csv(path: str) -> tuple[list[str], list[dict]]:
-    """Read headers and first few rows from CSV."""
+def _sniff_csv(path: str) -> tuple[list[str], list[dict], str]:
+    """Read headers and first few rows from CSV. Auto-detects delimiter (comma or semicolon)."""
     with open(path, "r", encoding="utf-8-sig") as f:
-        reader = csv.DictReader(f)
+        sample = f.read(2048)
+
+    # Detect delimiter: whichever of ; or , appears more in the first line
+    first_line = sample.splitlines()[0] if sample else ""
+    delimiter = ";" if first_line.count(";") > first_line.count(",") else ","
+
+    with open(path, "r", encoding="utf-8-sig") as f:
+        reader = csv.DictReader(f, delimiter=delimiter)
         headers = reader.fieldnames or []
         rows = [row for _, row in zip(range(5), reader)]
-    return list(headers), rows
+    return list(headers), rows, delimiter
 
 
 class ImportTab(QWidget):
@@ -207,7 +214,7 @@ class ImportTab(QWidget):
     def _auto_detect_and_load(self, path: str):
         """Read CSV headers, auto-map columns, auto-create counterparty config."""
         try:
-            headers, sample_rows = _sniff_csv(path)
+            headers, sample_rows, delimiter = _sniff_csv(path)
         except Exception as e:
             QMessageBox.critical(self, "Read Error", f"Could not read CSV:\n{e}")
             return
@@ -254,7 +261,8 @@ class ImportTab(QWidget):
         # Try to parse with auto-detected mapping
         try:
             records, detected_code = parse_gpg_csv(
-                path, col_mapping, date_format, bank_code_col or "Bank Code"
+                path, col_mapping, date_format, bank_code_col or "Bank Code",
+                delimiter=delimiter,
             )
         except Exception as e:
             QMessageBox.critical(

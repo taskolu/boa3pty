@@ -9,7 +9,8 @@ def parse_gpg_csv(
     file_path: str,
     column_mapping: dict,
     date_format: str,
-    bank_code_column: str = "Bank Code"
+    bank_code_column: str = "Bank Code",
+    delimiter: str = ",",
 ) -> tuple[list[GPGPayment], Optional[str]]:
     """Parse a GPG CSV file into GPGPayment records.
 
@@ -19,7 +20,7 @@ def parse_gpg_csv(
     detected_bank_code = None
 
     with open(file_path, "r", encoding="utf-8-sig") as f:
-        reader = csv.DictReader(f)
+        reader = csv.DictReader(f, delimiter=delimiter)
         for row in reader:
             # Detect bank code from first row
             if detected_bank_code is None and bank_code_column in row:
