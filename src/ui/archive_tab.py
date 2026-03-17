@@ -3,7 +3,7 @@ from datetime import date
 from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
     QTableWidget, QTableWidgetItem, QHeaderView, QComboBox,
-    QFileDialog, QMessageBox, QFrame
+    QFileDialog, QMessageBox, QFrame, QDateEdit
 )
 from PyQt5.QtCore import Qt, QDate
 from PyQt5.QtGui import QFont, QBrush, QColor
@@ -84,11 +84,13 @@ class ArchiveTab(QWidget):
         # ── Controls bar ──────────────────────────────────────────────
         ctrl = QHBoxLayout()
 
-        ctrl.addWidget(QLabel("Date:"))
-        self.cmb_date = QComboBox()
-        self.cmb_date.setMinimumWidth(130)
-        self.cmb_date.currentIndexChanged.connect(self._on_selection_changed)
-        ctrl.addWidget(self.cmb_date)
+        ctrl.addWidget(QLabel("Value Date:"))
+        self.dt_picker = QDateEdit()
+        self.dt_picker.setDisplayFormat("dd MMM yyyy")
+        self.dt_picker.setCalendarPopup(True)
+        self.dt_picker.setDate(QDate.currentDate())
+        self.dt_picker.dateChanged.connect(self._on_selection_changed)
+        ctrl.addWidget(self.dt_picker)
 
         ctrl.addWidget(QLabel("Counterparty:"))
         self.cmb_cp = QComboBox()
@@ -177,24 +179,15 @@ class ArchiveTab(QWidget):
         except Exception:
             self._archive_list = []
 
-        # Populate date dropdown (unique dates, newest first)
-        dates = []
-        seen = set()
-        for a in self._archive_list:
-            if a["date"] not in seen:
-                dates.append(a["date"])
-                seen.add(a["date"])
-
-        self.cmb_date.blockSignals(True)
-        self.cmb_date.clear()
-        self.cmb_date.addItems(dates)
-        self.cmb_date.blockSignals(False)
-
         self._on_selection_changed()
+
+    def _current_date_str(self) -> str:
+        qd = self.dt_picker.date()
+        return QDate(qd.year(), qd.month(), qd.day()).toString("yyyy-MM-dd")
 
     def _on_selection_changed(self):
         """Refresh the counterparty dropdown for the selected date."""
-        chosen_date = self.cmb_date.currentText()
+        chosen_date = self._current_date_str()
         cps = [a["counterparty"] for a in self._archive_list if a["date"] == chosen_date]
 
         self.cmb_cp.blockSignals(True)
@@ -205,7 +198,7 @@ class ArchiveTab(QWidget):
         self._load_selected()
 
     def _load_selected(self):
-        chosen_date = self.cmb_date.currentText()
+        chosen_date = self._current_date_str()
         chosen_cp   = self.cmb_cp.currentText()
         if not chosen_date or not chosen_cp:
             self._current_rows = []
@@ -264,12 +257,12 @@ class ArchiveTab(QWidget):
                 (_STATUS_LABEL.get(sv, sv),          row_bg, status_fg, True),
                 # 1  Value Date (WS)
                 (vd_ws,                              row_bg, None, False),
-                # 2  Pay Currency — not stored in archive (leave blank)
-                ("",                                 row_bg, None, False),
-                # 3  Pay Amount — not stored in archive
-                ("",                                 row_bg, None, False),
-                # 4  Rate — not stored in archive
-                ("",                                 row_bg, None, False),
+                # 2  Pay Currency
+                (str(r.get("WS_PayCcy", "") or ""),  row_bg, None, False),
+                # 3  Pay Amount
+                (str(r.get("WS_PayAmount", "") or ""), row_bg, None, False),
+                # 4  Rate
+                (str(r.get("WS_Rate", "") or ""),    row_bg, None, False),
                 # 5  Buy Ccy (WS rec_ccy)
                 (str(r.get("WS_RecCcy", "") or ""),  row_bg, None, False),
                 # 6  Buy Amount (WS rec_amount)
@@ -279,17 +272,17 @@ class ArchiveTab(QWidget):
                 # 8  Conf # — key column
                 (conf,                               key_bg, conf_fg, True),
                 # 9  GPG Status
-                ("",                                 row_bg, None, False),
+                (str(r.get("GPG_StatusCode", "") or ""), row_bg, None, False),
                 # 10 GPG Value Date
                 (vd_gpg,                             row_bg, None, False),
                 # 11 GPG Amount
                 (str(r.get("GPG_Amount", "") or ""), row_bg, None, False),
                 # 12 Currency (GPG)
                 (str(r.get("GPG_Currency", "") or ""), row_bg, None, False),
-                # 13 Client Account — not stored in archive
-                ("",                                 row_bg, None, False),
-                # 14 Arrival Date — not stored in archive
-                ("",                                 row_bg, None, False),
+                # 13 Client Account
+                (str(r.get("ClientAccount", "") or ""), row_bg, None, False),
+                # 14 Arrival Date
+                (str(r.get("ArrivalDate", "") or ""), row_bg, None, False),
                 # 15 Notes / Discrepancies
                 (str(r.get("Discrepancies", "") or ""), row_bg, None, False),
             ]
@@ -309,13 +302,17 @@ class ArchiveTab(QWidget):
     def _export(self):
         if not self._current_rows:
             return
+
+        chosen_date = self._current_date_str()
+        chosen_cp   = self.cmb_cp.currentText()
+        default_name = f"{chosen_date}_{chosen_cp}.xlsx" if chosen_date and chosen_cp else "archive.xlsx"
+
         path, _ = QFileDialog.getSaveFileName(
-            self, "Export Archive", "", "Excel Files (*.xlsx)"
+            self, "Export Archive", default_name, "Excel Files (*.xlsx)"
         )
         if not path:
             return
         try:
-            # Build a simple xlsx from the raw rows
             from openpyxl import Workbook as WB
             from openpyxl.styles import Font, PatternFill
             wb = WB()
@@ -326,8 +323,10 @@ class ArchiveTab(QWidget):
             hdr_font = Font(bold=True, color="FFFFFF")
 
             col_names = [
-                "Status", "WS Value Date", "WS Buy Ccy", "WS Buy Amount", "WS Deal #",
-                "Conf #", "GPG Currency", "GPG Amount", "GPG Value Date", "Notes"
+                "Status", "Value Date (WS)", "Pay Ccy", "Pay Amount", "Rate",
+                "Buy Ccy", "Buy Amount", "WS Deal #", "Conf #",
+                "GPG Status", "GPG Value Date", "GPG Amount", "Currency",
+                "Client Account", "Arrival Date", "Notes"
             ]
             ws.append(col_names)
             for col_idx in range(1, len(col_names) + 1):
@@ -340,13 +339,19 @@ class ArchiveTab(QWidget):
                 ws.append([
                     _STATUS_LABEL.get(sv.lower(), sv),
                     str(r.get("WS_ValueDate", "") or ""),
+                    str(r.get("WS_PayCcy", "") or ""),
+                    str(r.get("WS_PayAmount", "") or ""),
+                    str(r.get("WS_Rate", "") or ""),
                     str(r.get("WS_RecCcy", "") or ""),
                     str(r.get("WS_RecAmount", "") or ""),
                     str(r.get("WS_Ref", "") or ""),
                     str(r.get("Confirmation#", "") or ""),
-                    str(r.get("GPG_Currency", "") or ""),
-                    str(r.get("GPG_Amount", "") or ""),
+                    str(r.get("GPG_StatusCode", "") or ""),
                     str(r.get("GPG_ValueDate", "") or ""),
+                    str(r.get("GPG_Amount", "") or ""),
+                    str(r.get("GPG_Currency", "") or ""),
+                    str(r.get("ClientAccount", "") or ""),
+                    str(r.get("ArrivalDate", "") or ""),
                     str(r.get("Discrepancies", "") or ""),
                 ])
 

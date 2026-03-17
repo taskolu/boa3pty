@@ -40,21 +40,36 @@ class ArchiveManager:
         ws_results = wb.create_sheet("Results")
         ws_results.append([
             "Status", "Confirmation#", "GPG_Currency", "GPG_Amount",
-            "GPG_ValueDate", "WS_RecCcy", "WS_RecAmount", "WS_ValueDate",
-            "WS_Ref", "Discrepancies", "Resolution_Source"
+            "GPG_ValueDate", "GPG_StatusCode",
+            "WS_RecCcy", "WS_RecAmount", "WS_ValueDate", "WS_Ref",
+            "WS_PayCcy", "WS_PayAmount", "WS_Rate",
+            "ClientAccount", "ArrivalDate",
+            "Discrepancies", "Resolution_Source"
         ])
         for r in results:
+            gpg = r.gpg_record
+            ws  = r.ws_record
+            raw = gpg.raw_row if gpg else {}
+            arrival = raw.get("Arrival_date_in_UTC", raw.get("arrival_date", ""))
+            arrival = arrival.split(" ")[0] if arrival else ""
+            client  = raw.get("client_account_number", "")
             ws_results.append([
                 r.status.value,
-                (r.gpg_record.confirmation_number if r.gpg_record
-                 else r.ws_record.external_ref if r.ws_record else ""),
-                r.gpg_record.buy_currency if r.gpg_record else "",
-                str(r.gpg_record.buy_amount) if r.gpg_record else "",
-                r.gpg_record.value_date.isoformat() if r.gpg_record else "",
-                r.ws_record.rec_ccy if r.ws_record else "",
-                str(r.ws_record.rec_amount) if r.ws_record else "",
-                r.ws_record.value_date.isoformat() if r.ws_record else "",
-                r.ws_record.wallstreet_ref if r.ws_record else "",
+                (gpg.confirmation_number if gpg
+                 else ws.external_ref if ws else ""),
+                gpg.buy_currency if gpg else "",
+                str(gpg.buy_amount) if gpg else "",
+                gpg.value_date.isoformat() if gpg else "",
+                gpg.status_code or "" if gpg else "",
+                ws.rec_ccy if ws else "",
+                str(ws.rec_amount) if ws else "",
+                ws.value_date.isoformat() if ws else "",
+                ws.wallstreet_ref if ws else "",
+                ws.pay_ccy if ws else "",
+                str(ws.pay_amount) if ws else "",
+                str(ws.rate) if ws else "",
+                client,
+                arrival,
                 "; ".join(r.discrepancies),
                 r.resolution_source or "",
             ])
