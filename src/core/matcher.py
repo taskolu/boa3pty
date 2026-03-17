@@ -1,3 +1,4 @@
+from __future__ import annotations
 from src.core.models import GPGPayment, WSEntry, MatchResult, MatchStatus
 
 # Priority for sorting results: lower number = shown first (problems at top)

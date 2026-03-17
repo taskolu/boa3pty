@@ -74,7 +74,7 @@ def _auto_map_columns(headers: list[str]) -> dict:
     return mapping
 
 
-def _detect_bank_code_column(headers: list[str]) -> str | None:
+def _detect_bank_code_column(headers: list[str]) -> Optional[str]:
     """Return the CSV column name that most likely holds the bank/entity code."""
     norm = {_normalise(h): h for h in headers}
     for alias in _BANK_CODE_ALIASES:

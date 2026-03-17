@@ -1,6 +1,8 @@
+from __future__ import annotations
 import os
 from datetime import date
 from pathlib import Path
+from typing import Optional
 from openpyxl import Workbook, load_workbook
 from src.core.models import MatchResult, MatchStatus
 
@@ -77,7 +79,7 @@ class ArchiveManager:
         filepath = self._filename(dt, counterparty)
         wb.save(str(filepath))
 
-    def load_daily(self, dt: date, counterparty: str) -> dict | None:
+    def load_daily(self, dt: date, counterparty: str) -> Optional[dict]:
         filepath = self._filename(dt, counterparty)
         if not filepath.exists():
             return None
