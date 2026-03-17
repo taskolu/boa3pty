@@ -235,7 +235,16 @@ class ReconcileTab(QWidget):
     # ── Data loading ───────────────────────────────────────────────
 
     def load_results(self, results, counterparty_name: str):
-        self._all_results = results
+        # Sort: MATCHED first (by currency asc, then amount asc), problems after
+        def _sort_key(r):
+            is_matched = 0 if r.status == MatchStatus.MATCHED else 1
+            ccy = (r.gpg_record.buy_currency if r.gpg_record else
+                   r.ws_record.rec_ccy if r.ws_record else "")
+            amt = (r.gpg_record.buy_amount if r.gpg_record else
+                   r.ws_record.rec_amount if r.ws_record else 0)
+            return (is_matched, ccy, amt)
+
+        self._all_results = sorted(results, key=_sort_key, reverse=False)
         self._counterparty = counterparty_name
         self.btn_save.setEnabled(True)
         self.btn_export.setEnabled(True)

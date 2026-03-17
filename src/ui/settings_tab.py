@@ -1,12 +1,15 @@
 import os
 import json
+import hashlib
 from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
     QListWidget, QLineEdit, QFileDialog, QDialog, QDialogButtonBox,
     QFormLayout, QComboBox, QSpinBox, QCheckBox, QTableWidget,
-    QTableWidgetItem, QHeaderView, QGroupBox, QMessageBox
+    QTableWidgetItem, QHeaderView, QGroupBox, QMessageBox, QInputDialog
 )
 from PyQt5.QtCore import pyqtSignal
+
+_SETTINGS_PWD_HASH = hashlib.sha256(b"Convera22!").hexdigest()
 
 
 class SettingsTab(QWidget):
@@ -15,7 +18,23 @@ class SettingsTab(QWidget):
     def __init__(self, config_manager):
         super().__init__()
         self.config = config_manager
+        self._unlocked = False
         self._init_ui()
+
+    def _check_auth(self) -> bool:
+        """Return True if already unlocked, else prompt for password."""
+        if self._unlocked:
+            return True
+        pwd, ok = QInputDialog.getText(
+            self, "Settings Locked", "Enter password to edit settings:",
+            QLineEdit.Password
+        )
+        if ok and hashlib.sha256(pwd.encode()).hexdigest() == _SETTINGS_PWD_HASH:
+            self._unlocked = True
+            return True
+        if ok:
+            QMessageBox.warning(self, "Access Denied", "Incorrect password.")
+        return False
 
     def _init_ui(self):
         layout = QVBoxLayout(self)
@@ -65,6 +84,8 @@ class SettingsTab(QWidget):
         layout.addStretch()
 
     def _browse_archive(self):
+        if not self._check_auth():
+            return
         path = QFileDialog.getExistingDirectory(self, "Select Archive Folder")
         if path:
             self.txt_archive_path.setText(path)
@@ -75,6 +96,8 @@ class SettingsTab(QWidget):
             self.lst_cp.addItem(name)
 
     def _add_cp(self):
+        if not self._check_auth():
+            return
         dlg = CounterpartyDialog(self)
         if dlg.exec_() == QDialog.Accepted:
             data = dlg.get_data()
@@ -82,6 +105,8 @@ class SettingsTab(QWidget):
             self._refresh_cp_list()
 
     def _edit_cp(self):
+        if not self._check_auth():
+            return
         item = self.lst_cp.currentItem()
         if not item:
             return
@@ -94,6 +119,8 @@ class SettingsTab(QWidget):
             self._refresh_cp_list()
 
     def _remove_cp(self):
+        if not self._check_auth():
+            return
         item = self.lst_cp.currentItem()
         if not item:
             return
@@ -108,6 +135,8 @@ class SettingsTab(QWidget):
             self._refresh_cp_list()
 
     def _save(self):
+        if not self._check_auth():
+            return
         self.config.archive_path = self.txt_archive_path.text().strip()
         self.config.save()
         self.settings_saved.emit()
