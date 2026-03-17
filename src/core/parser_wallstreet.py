@@ -155,11 +155,31 @@ def parse_wallstreet_paste(
             return ""
         return cells[idx].strip()
 
+    # Pre-process: merge continuation lines.
+    # WallStreet wraps long Customer names across two lines when copied.
+    # A proper data row always starts with a numeric row-index in the first
+    # tab-delimited cell.  Any line whose first cell is NOT a digit is a
+    # continuation of the previous row — merge its first cell onto the last
+    # cell of the previous row (completing the broken Customer field), then
+    # append the remaining cells.
+    raw_data_lines = [l for l in lines[header_line_idx + 1:] if l.strip()]
+    merged_data_lines: list[str] = []
+    for line in raw_data_lines:
+        first_cell = line.split("\t")[0].strip()
+        if first_cell.isdigit() or not merged_data_lines:
+            merged_data_lines.append(line)
+        else:
+            # Continuation: glue first cell onto last cell of previous row
+            prev_cells = merged_data_lines[-1].split("\t")
+            cont_cells = line.split("\t")
+            prev_cells[-1] = prev_cells[-1].strip() + " " + cont_cells[0].strip()
+            merged_data_lines[-1] = "\t".join(prev_cells + cont_cells[1:])
+
     seen_external_refs: set[str] = set()
     entries: list[WSEntry] = []
     detected_counterparty: Optional[str] = None
 
-    for line in lines[header_line_idx + 1:]:
+    for line in merged_data_lines:
         cells = line.split("\t")
         if len(cells) < 3:
             continue

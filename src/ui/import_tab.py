@@ -94,9 +94,10 @@ def _sniff_csv(path: str) -> tuple[list[str], list[dict], str]:
     with open(path, "r", encoding="utf-8-sig") as f:
         sample = f.read(2048)
 
-    # Detect delimiter: whichever of ; or , appears more in the first line
+    # Detect delimiter: tab, semicolon, or comma — whichever appears most in first line
     first_line = sample.splitlines()[0] if sample else ""
-    delimiter = ";" if first_line.count(";") > first_line.count(",") else ","
+    counts = {"\t": first_line.count("\t"), ";": first_line.count(";"), ",": first_line.count(",")}
+    delimiter = max(counts, key=counts.get)
 
     with open(path, "r", encoding="utf-8-sig") as f:
         reader = csv.DictReader(f, delimiter=delimiter)
@@ -369,7 +370,7 @@ class ImportTab(QWidget):
                 f"Parsed: {len(entries)} unique entries\n"
                 f"Counterparty: {ws_cp or 'unknown'}"
             )
-            if dup_count > 0:
+            if dup_count > 0 and len(entries) > 0:
                 info += f"\n({dup_count} duplicate rows removed)"
             if len(entries) == 0:
                 detected_hdrs = get_detected_ws_headers(text)
