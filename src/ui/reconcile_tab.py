@@ -10,30 +10,86 @@ from PyQt5.QtGui import QColor, QFont, QBrush
 from src.core.models import MatchStatus
 from src.export.report_generator import generate_payment_breakdown
 
-# Status → (display label, row background color)
-_STATUS_STYLE: dict[str, tuple[str, str]] = {
-    MatchStatus.MATCHED.value:               ("Matched",             "#1a3a1a"),
-    MatchStatus.UNMATCHED_GPG.value:         ("Missing in WS",       "#3a1a1a"),
-    MatchStatus.UNMATCHED_WS.value:          ("Extra in WS",         "#3a2a00"),
-    MatchStatus.FLAGGED_DT06.value:          ("DT06 Flagged",        "#2a2a3a"),
-    MatchStatus.RESOLVED_FROM_ARCHIVE.value: ("Resolved",            "#1a2a1a"),
-    MatchStatus.AMOUNT_MISMATCH.value:       ("Amount Mismatch",     "#3a1a00"),
-    MatchStatus.CURRENCY_MISMATCH.value:     ("Currency Mismatch",   "#3a1a00"),
+# ── Column layout ──────────────────────────────────────────────────────────
+# Left = WallStreet  |  Centre = matching key  |  Right = GPG
+#
+#  0  Status
+#  1  WS: Pay Amt (USD)
+#  2  WS: Rec Ccy
+#  3  WS: Rec Amt
+#  4  WS: Rate
+#  5  WS: Value Date
+#  6  *** Conf # / Ext Deal # ***   ← matching key
+#  7  GPG: Currency
+#  8  GPG: Amount
+#  9  GPG: Value Date
+# 10  GPG: Status
+# 11  GPG: Arrival Date
+# 12  GPG: Client Account
+# 13  Notes / Discrepancies
+
+_HEADERS = [
+    "Status",
+    "USD Amount",        # WS pay
+    "Ccy",              # WS rec ccy
+    "Exotic Amount",    # WS rec amt
+    "Rate",
+    "WS Value Date",
+    "Conf # / Ext Deal #",   # centre — matching key
+    "Currency",         # GPG
+    "GPG Amount",       # GPG
+    "GPG Value Date",   # GPG
+    "GPG Status",       # GPG
+    "Arrival Date",     # GPG raw
+    "Client Account",   # GPG raw
+    "Notes",
+]
+
+# Column index of the matching key
+_CONF_COL = 6
+
+# Header background per section
+_WS_HEADER_BG   = QColor("#1a2a3a")   # dark blue
+_KEY_HEADER_BG  = QColor("#3a2a00")   # dark amber
+_GPG_HEADER_BG  = QColor("#1a3a1a")   # dark green
+
+# Row backgrounds
+_STATUS_BG = {
+    MatchStatus.MATCHED.value:               QColor("#152815"),
+    MatchStatus.UNMATCHED_GPG.value:         QColor("#301010"),
+    MatchStatus.UNMATCHED_WS.value:          QColor("#2a1800"),
+    MatchStatus.FLAGGED_DT06.value:          QColor("#181828"),
+    MatchStatus.RESOLVED_FROM_ARCHIVE.value: QColor("#152015"),
+    MatchStatus.AMOUNT_MISMATCH.value:       QColor("#2a1200"),
+    MatchStatus.CURRENCY_MISMATCH.value:     QColor("#2a1200"),
 }
 
-_STATUS_BADGE_COLOR: dict[str, str] = {
-    MatchStatus.MATCHED.value:               "#2d7a2d",
-    MatchStatus.UNMATCHED_GPG.value:         "#a33",
-    MatchStatus.UNMATCHED_WS.value:          "#a63",
-    MatchStatus.FLAGGED_DT06.value:          "#446",
-    MatchStatus.RESOLVED_FROM_ARCHIVE.value: "#2d5a2d",
-    MatchStatus.AMOUNT_MISMATCH.value:       "#a43",
-    MatchStatus.CURRENCY_MISMATCH.value:     "#a43",
+_STATUS_LABEL = {
+    MatchStatus.MATCHED.value:               "✓  Matched",
+    MatchStatus.UNMATCHED_GPG.value:         "✗  Missing in WS",
+    MatchStatus.UNMATCHED_WS.value:          "⚠  Extra in WS",
+    MatchStatus.FLAGGED_DT06.value:          "⏳  DT06",
+    MatchStatus.RESOLVED_FROM_ARCHIVE.value: "↩  Resolved",
+    MatchStatus.AMOUNT_MISMATCH.value:       "$  Amt Mismatch",
+    MatchStatus.CURRENCY_MISMATCH.value:     "€  Ccy Mismatch",
 }
+
+_STATUS_FG = {
+    MatchStatus.MATCHED.value:               QColor("#4caf50"),
+    MatchStatus.UNMATCHED_GPG.value:         QColor("#ef5350"),
+    MatchStatus.UNMATCHED_WS.value:          QColor("#ff9800"),
+    MatchStatus.FLAGGED_DT06.value:          QColor("#9fa8da"),
+    MatchStatus.RESOLVED_FROM_ARCHIVE.value: QColor("#81c784"),
+    MatchStatus.AMOUNT_MISMATCH.value:       QColor("#ff7043"),
+    MatchStatus.CURRENCY_MISMATCH.value:     QColor("#ff7043"),
+}
+
+# WS columns (indices), centre col, GPG columns (indices)
+_WS_COLS  = [1, 2, 3, 4, 5]
+_GPG_COLS = [7, 8, 9, 10, 11, 12, 13]
 
 
 class ReconcileTab(QWidget):
-    # Emits (value_date, counterparty_display_name)
     save_to_archive_requested = pyqtSignal(date, str)
 
     def __init__(self, config_manager):
@@ -43,47 +99,69 @@ class ReconcileTab(QWidget):
         self._counterparty = None
         self._init_ui()
 
+    # ── UI construction ────────────────────────────────────────────
+
     def _init_ui(self):
         layout = QVBoxLayout(self)
 
-        # ── Summary bar ────────────────────────────────────────────
+        # Summary bar
         summary_row = QHBoxLayout()
         self._summary_labels: dict[str, QLabel] = {}
-        for status_val, (label, bg) in _STATUS_STYLE.items():
-            lbl = QLabel("0")
-            lbl.setFont(QFont("Segoe UI", 9, QFont.Bold))
-            lbl.setAlignment(Qt.AlignCenter)
-            lbl.setMinimumWidth(28)
-            lbl.setStyleSheet(
-                f"QLabel {{ background-color: {_STATUS_BADGE_COLOR.get(status_val, '#444')};"
-                "color: white; border-radius: 3px; padding: 1px 6px; }}"
+        for sv, label in _STATUS_LABEL.items():
+            count_lbl = QLabel("0")
+            count_lbl.setFont(QFont("Segoe UI", 9, QFont.Bold))
+            count_lbl.setAlignment(Qt.AlignCenter)
+            count_lbl.setMinimumWidth(26)
+            fg = _STATUS_FG.get(sv, QColor("white"))
+            count_lbl.setStyleSheet(
+                f"QLabel {{ color: {fg.name()}; font-weight: bold; "
+                "background: #252525; border-radius: 3px; padding: 1px 6px; }}"
             )
-            self._summary_labels[status_val] = lbl
-            summary_row.addWidget(QLabel(f"{label}"))
+            self._summary_labels[sv] = count_lbl
+            lbl = QLabel(label.split()[-1])   # short name
+            lbl.setStyleSheet(f"color: {fg.name()};")
             summary_row.addWidget(lbl)
-            summary_row.addSpacing(12)
+            summary_row.addWidget(count_lbl)
+            summary_row.addSpacing(14)
         summary_row.addStretch()
         layout.addLayout(summary_row)
 
-        # ── Filter / Search ─────────────────────────────────────────
+        # Filter / search
         filter_bar = QHBoxLayout()
         filter_bar.addWidget(QLabel("Filter:"))
         self.cmb_filter = QComboBox()
-        self.cmb_filter.addItems(
-            ["All", "Matched", "Missing in WS", "Extra in WS",
-             "DT06 Flagged", "Resolved", "Amount Mismatch", "Currency Mismatch"]
-        )
+        self.cmb_filter.addItems([
+            "All", "Matched", "Missing in WS", "Extra in WS",
+            "DT06 Flagged", "Resolved", "Amount Mismatch", "Currency Mismatch",
+        ])
         self.cmb_filter.currentIndexChanged.connect(self._apply_filter)
         filter_bar.addWidget(self.cmb_filter)
         filter_bar.addSpacing(16)
         filter_bar.addWidget(QLabel("Search:"))
         self.txt_search = QLineEdit()
-        self.txt_search.setPlaceholderText("Conf# / currency / amount / client…")
+        self.txt_search.setPlaceholderText("Conf# / currency / client account…")
         self.txt_search.textChanged.connect(self._apply_filter)
         filter_bar.addWidget(self.txt_search, 1)
         layout.addLayout(filter_bar)
 
-        # ── Results table ───────────────────────────────────────────
+        # Section labels above table
+        section_row = QHBoxLayout()
+        section_row.addSpacing(4)
+        ws_lbl = QLabel("◀  WallStreet")
+        ws_lbl.setStyleSheet("color: #5b9bd5; font-weight: bold; font-size: 10px;")
+        section_row.addWidget(ws_lbl)
+        section_row.addStretch()
+        key_lbl = QLabel("MATCHING KEY")
+        key_lbl.setStyleSheet("color: #ffc107; font-weight: bold; font-size: 10px;")
+        section_row.addWidget(key_lbl)
+        section_row.addStretch()
+        gpg_lbl = QLabel("GPG  ▶")
+        gpg_lbl.setStyleSheet("color: #66bb6a; font-weight: bold; font-size: 10px;")
+        section_row.addWidget(gpg_lbl)
+        section_row.addSpacing(4)
+        layout.addLayout(section_row)
+
+        # Table
         self.tbl = QTableWidget()
         self.tbl.setEditTriggers(QTableWidget.NoEditTriggers)
         self.tbl.setSelectionBehavior(QTableWidget.SelectRows)
@@ -93,52 +171,67 @@ class ReconcileTab(QWidget):
         self.tbl.verticalHeader().setVisible(False)
         self.tbl.setShowGrid(True)
         self.tbl.setWordWrap(False)
+        self.tbl.setColumnCount(len(_HEADERS))
+        self.tbl.setHorizontalHeaderLabels(_HEADERS)
+        self._style_header()
         layout.addWidget(self.tbl, 1)
 
-        # ── Bottom actions ──────────────────────────────────────────
+        # Bottom bar
         bottom = QHBoxLayout()
-
         archive_group = QGroupBox("Save to Archive")
-        ag_layout = QHBoxLayout(archive_group)
-
-        ag_layout.addWidget(QLabel("Value Date:"))
+        ag = QHBoxLayout(archive_group)
+        ag.addWidget(QLabel("Value Date:"))
         self.dt_archive = QDateEdit()
         self.dt_archive.setCalendarPopup(True)
         self.dt_archive.setDate(QDate.currentDate())
         self.dt_archive.setDisplayFormat("dd MMM yyyy")
-        ag_layout.addWidget(self.dt_archive)
-
-        ag_layout.addWidget(QLabel("Counterparty:"))
+        ag.addWidget(self.dt_archive)
+        ag.addWidget(QLabel("As:"))
         self.txt_archive_cp = QLineEdit()
         self.txt_archive_cp.setPlaceholderText("BOA3PTY")
-        self.txt_archive_cp.setMaximumWidth(120)
-        ag_layout.addWidget(self.txt_archive_cp)
-
-        self.btn_save = QPushButton("Save to Archive")
+        self.txt_archive_cp.setMaximumWidth(110)
+        ag.addWidget(self.txt_archive_cp)
+        self.btn_save = QPushButton("Save")
         self.btn_save.setEnabled(False)
         self.btn_save.clicked.connect(self._save_archive)
         self.btn_save.setStyleSheet(
-            "QPushButton { background-color: #2e6e2e; color: white; "
-            "border-radius: 4px; padding: 4px 12px; } "
-            "QPushButton:hover { background-color: #3d8f3d; } "
-            "QPushButton:disabled { background-color: #444; color: #777; }"
+            "QPushButton{background:#2e6e2e;color:white;border-radius:4px;padding:4px 10px}"
+            "QPushButton:hover{background:#3d8f3d}"
+            "QPushButton:disabled{background:#444;color:#777}"
         )
-        ag_layout.addWidget(self.btn_save)
+        ag.addWidget(self.btn_save)
         bottom.addWidget(archive_group)
-
         bottom.addStretch()
-
         self.btn_export = QPushButton("Export to Excel…")
         self.btn_export.setEnabled(False)
         self.btn_export.clicked.connect(self._export_report)
         self.btn_export.setStyleSheet(
-            "QPushButton { background-color: #4472C4; color: white; "
-            "border-radius: 4px; padding: 6px 16px; } "
-            "QPushButton:hover { background-color: #5583d5; } "
-            "QPushButton:disabled { background-color: #444; color: #777; }"
+            "QPushButton{background:#4472C4;color:white;border-radius:4px;padding:6px 14px}"
+            "QPushButton:hover{background:#5583d5}"
+            "QPushButton:disabled{background:#444;color:#777}"
         )
         bottom.addWidget(self.btn_export)
         layout.addLayout(bottom)
+
+    def _style_header(self):
+        """Colour the header: WS=blue, Key=amber, GPG=green."""
+        hh = self.tbl.horizontalHeader()
+        for col in range(len(_HEADERS)):
+            item = QTableWidgetItem(_HEADERS[col])
+            item.setTextAlignment(Qt.AlignCenter)
+            item.setFont(QFont("Segoe UI", 8, QFont.Bold))
+            if col in _WS_COLS:
+                item.setBackground(QBrush(_WS_HEADER_BG))
+                item.setForeground(QBrush(QColor("#5b9bd5")))
+            elif col == _CONF_COL:
+                item.setBackground(QBrush(_KEY_HEADER_BG))
+                item.setForeground(QBrush(QColor("#ffc107")))
+            elif col in _GPG_COLS:
+                item.setBackground(QBrush(_GPG_HEADER_BG))
+                item.setForeground(QBrush(QColor("#66bb6a")))
+            self.tbl.setHorizontalHeaderItem(col, item)
+
+    # ── Data loading ───────────────────────────────────────────────
 
     def load_results(self, results, counterparty_name: str):
         self._all_results = results
@@ -146,17 +239,13 @@ class ReconcileTab(QWidget):
         self.btn_save.setEnabled(True)
         self.btn_export.setEnabled(True)
 
-        # Auto-set value date from the most common date in results
+        # Auto-set archive date from most common GPG value date
         dates = [r.gpg_record.value_date for r in results if r.gpg_record]
         if dates:
             vd = max(set(dates), key=dates.count)
             self.dt_archive.setDate(QDate(vd.year, vd.month, vd.day))
 
-        # Pre-fill counterparty name (keep existing if user already set it)
         if not self.txt_archive_cp.text().strip():
-            # Try to get a friendly name: use WS detected counterparty or config
-            cp_cfg = self.config.get_counterparty(counterparty_name) or {}
-            ws_name = cp_cfg.get("wallstreet_counterparty_name", "")
             self.txt_archive_cp.setText(counterparty_name)
 
         self._update_summary(results)
@@ -170,11 +259,8 @@ class ReconcileTab(QWidget):
             lbl.setText(str(counts.get(sv, 0)))
 
     def _apply_filter(self):
-        filter_text = self.cmb_filter.currentText()
-        search = self.txt_search.text().lower()
-
         _filter_map = {
-            "All":               None,
+            "All": None,
             "Matched":           MatchStatus.MATCHED.value,
             "Missing in WS":     MatchStatus.UNMATCHED_GPG.value,
             "Extra in WS":       MatchStatus.UNMATCHED_WS.value,
@@ -183,7 +269,8 @@ class ReconcileTab(QWidget):
             "Amount Mismatch":   MatchStatus.AMOUNT_MISMATCH.value,
             "Currency Mismatch": MatchStatus.CURRENCY_MISMATCH.value,
         }
-        status_filter = _filter_map.get(filter_text)
+        status_filter = _filter_map.get(self.cmb_filter.currentText())
+        search = self.txt_search.text().lower()
 
         filtered = []
         for r in self._all_results:
@@ -191,80 +278,89 @@ class ReconcileTab(QWidget):
                 continue
             if search:
                 raw = r.gpg_record.raw_row if r.gpg_record else {}
-                haystack = " ".join([
+                hay = " ".join([
                     r.gpg_record.confirmation_number if r.gpg_record else "",
                     r.gpg_record.buy_currency if r.gpg_record else "",
                     str(r.gpg_record.buy_amount) if r.gpg_record else "",
                     r.ws_record.external_ref if r.ws_record else "",
-                    r.ws_record.rec_ccy if r.ws_record else "",
                     raw.get("client_account_number", ""),
                     raw.get("client_name", ""),
                 ]).lower()
-                if search not in haystack:
+                if search not in hay:
                     continue
             filtered.append(r)
         self._populate_table(filtered)
 
     def _populate_table(self, results):
-        headers = [
-            "Status",
-            "Conf #",
-            "Currency",
-            "Exotic Amount",
-            "USD Amount",
-            "Rate",
-            "Value Date",
-            "Arrival Date",
-            "Client Account",
-            "Notes",
-        ]
-        self.tbl.setColumnCount(len(headers))
-        self.tbl.setHorizontalHeaderLabels(headers)
         self.tbl.setRowCount(len(results))
 
-        for row_idx, r in enumerate(results):
-            status_val = r.status.value
-            display_label, bg_color = _STATUS_STYLE.get(status_val, (status_val, "#2a2a2a"))
-            bg = QColor(bg_color)
+        for ri, r in enumerate(results):
+            sv = r.status.value
+            row_bg  = _STATUS_BG.get(sv, QColor("#252525"))
+            key_bg  = QColor("#2a1e00") if sv == MatchStatus.MATCHED.value else QColor("#1e1a00")
+            status_fg = _STATUS_FG.get(sv, QColor("white"))
 
             conf = (r.gpg_record.confirmation_number if r.gpg_record
                     else r.ws_record.external_ref if r.ws_record else "")
 
-            # Pull raw GPG fields for extra columns
             raw = r.gpg_record.raw_row if r.gpg_record else {}
-            arrival_raw = raw.get("Arrival_date_in_UTC", raw.get("arrival_date", ""))
-            # Strip time from arrival date
-            arrival = arrival_raw.split(" ")[0] if arrival_raw else ""
-            client_acct = raw.get("client_account_number", "")
+            arrival = raw.get("Arrival_date_in_UTC", raw.get("arrival_date", ""))
+            arrival = arrival.split(" ")[0] if arrival else ""
+            client  = raw.get("client_account_number", "")
 
-            exotic_ccy = (r.gpg_record.buy_currency if r.gpg_record
-                          else r.ws_record.rec_ccy if r.ws_record else "")
-            exotic_amt = (str(r.gpg_record.buy_amount) if r.gpg_record
-                          else str(r.ws_record.rec_amount) if r.ws_record else "")
-            usd_amt = str(r.ws_record.pay_amount) if r.ws_record else ""
-            rate = str(r.ws_record.rate) if r.ws_record else ""
-            vdate = (r.gpg_record.value_date.strftime("%d %b %Y") if r.gpg_record
-                     else r.ws_record.value_date.strftime("%d %b %Y") if r.ws_record else "")
+            ws = r.ws_record
+            gpg = r.gpg_record
 
-            notes = "; ".join(r.discrepancies) if r.discrepancies else ""
+            row_data = [
+                # 0  Status
+                (_STATUS_LABEL.get(sv, sv), row_bg, status_fg, True),
+                # 1  WS USD Amount
+                (str(ws.pay_amount) if ws else "",      row_bg, None, False),
+                # 2  WS Rec Ccy
+                (ws.rec_ccy if ws else "",              row_bg, None, False),
+                # 3  WS Rec Amount
+                (str(ws.rec_amount) if ws else "",      row_bg, None, False),
+                # 4  Rate
+                (str(ws.rate) if ws else "",            row_bg, None, False),
+                # 5  WS Value Date
+                (ws.value_date.strftime("%d %b %Y") if ws else "", row_bg, None, False),
+                # 6  CONF # (centre key)
+                (conf,                                  key_bg, QColor("#ffc107"), True),
+                # 7  GPG Currency
+                (gpg.buy_currency if gpg else "",       row_bg, None, False),
+                # 8  GPG Amount
+                (str(gpg.buy_amount) if gpg else "",    row_bg, None, False),
+                # 9  GPG Value Date
+                (gpg.value_date.strftime("%d %b %Y") if gpg else "", row_bg, None, False),
+                # 10 GPG Status
+                (gpg.status_code or ("OK" if gpg else ""), row_bg, None, False),
+                # 11 Arrival Date
+                (arrival,                               row_bg, None, False),
+                # 12 Client Account
+                (client,                                row_bg, None, False),
+                # 13 Notes
+                ("; ".join(r.discrepancies),            row_bg, None, False),
+            ]
 
-            cells = [display_label, conf, exotic_ccy, exotic_amt,
-                     usd_amt, rate, vdate, arrival, client_acct, notes]
-
-            for col_idx, val in enumerate(cells):
+            for ci, (val, bg, fg, bold) in enumerate(row_data):
                 item = QTableWidgetItem(val)
                 item.setBackground(QBrush(bg))
-                if col_idx == 0:  # Status column — bold
+                if fg:
+                    item.setForeground(QBrush(fg))
+                if bold:
                     item.setFont(QFont("Segoe UI", 9, QFont.Bold))
-                    badge_color = _STATUS_BADGE_COLOR.get(status_val, "#555")
-                    item.setForeground(QBrush(QColor(badge_color)))
-                self.tbl.setItem(row_idx, col_idx, item)
+                item.setTextAlignment(Qt.AlignVCenter | Qt.AlignLeft)
+                self.tbl.setItem(ri, ci, item)
+
+        self.tbl.resizeColumnsToContents()
+
+    # ── Actions ────────────────────────────────────────────────────
 
     def _save_archive(self):
         qd = self.dt_archive.date()
         d = date(qd.year(), qd.month(), qd.day())
-        cp_name = self.txt_archive_cp.text().strip() or self._counterparty or "UNKNOWN"
-        self.save_to_archive_requested.emit(d, cp_name)
+        cp = self.txt_archive_cp.text().strip() or self._counterparty or "UNKNOWN"
+        self.save_to_archive_requested.emit(d, cp)
 
     def _export_report(self):
         path, _ = QFileDialog.getSaveFileName(
@@ -276,6 +372,6 @@ class ReconcileTab(QWidget):
             qd = self.dt_archive.date()
             d = date(qd.year(), qd.month(), qd.day())
             generate_payment_breakdown(self._all_results, path, d)
-            QMessageBox.information(self, "Export", f"Report saved to:\n{path}")
+            QMessageBox.information(self, "Export", f"Saved:\n{path}")
         except Exception as e:
             QMessageBox.critical(self, "Export Error", str(e))
