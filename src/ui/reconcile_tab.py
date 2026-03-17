@@ -239,10 +239,8 @@ class ReconcileTab(QWidget):
         # Sort: MATCHED first (by currency asc, then amount asc), problems after
         def _sort_key(r):
             is_matched = 0 if r.status == MatchStatus.MATCHED else 1
-            ccy = (r.gpg_record.buy_currency if r.gpg_record else
-                   r.ws_record.rec_ccy if r.ws_record else "")
-            amt = (r.gpg_record.buy_amount if r.gpg_record else
-                   r.ws_record.rec_amount if r.ws_record else 0)
+            ccy = r.ws_record.rec_ccy if r.ws_record else ""
+            amt = r.ws_record.rec_amount if r.ws_record else 0
             return (is_matched, ccy, amt)
 
         self._all_results = sorted(results, key=_sort_key, reverse=False)
@@ -259,8 +257,8 @@ class ReconcileTab(QWidget):
         if not self.txt_archive_cp.text().strip():
             self.txt_archive_cp.setText(counterparty_name)
 
-        self._update_summary(results)
-        self._populate_table(results)
+        self._update_summary(self._all_results)
+        self._populate_table(self._all_results)
 
     def _update_summary(self, results):
         counts: dict[str, int] = {}
