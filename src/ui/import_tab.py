@@ -9,7 +9,7 @@ from PyQt5.QtCore import Qt, pyqtSignal
 from PyQt5.QtGui import QFont
 
 from src.core.parser_gpg import parse_gpg_csv
-from src.core.parser_wallstreet import parse_wallstreet_paste
+from src.core.parser_wallstreet import parse_wallstreet_paste, get_detected_ws_headers
 
 # ── Column auto-detection: maps standard field → list of known aliases ─────────
 _GPG_ALIASES = {
@@ -18,10 +18,12 @@ _GPG_ALIASES = {
         "transaction id", "txn id", "transaction reference",
     ],
     "confirmation_number": [
+        "source system payment id",                # primary Convera GPG key
         "payment reference", "reference", "ref", "confirmation",
         "confirm number", "conf#", "conf number", "confirmation number",
         "payment ref", "conf", "ext ref", "external ref",
         "transaction reference",                   # GPG Convera format
+        "source ref", "source id", "source payment id",
     ],
     "buy_currency": [
         "currency", "ccy", "buy currency", "buy ccy", "pay currency",
@@ -359,13 +361,23 @@ class ImportTab(QWidget):
                     self.config.update_counterparty(self.detected_counterparty, cp)
                     self.config.save()
 
-            dup_count = text.count("\n") - len(entries)
+            # Count actual data lines: non-empty lines after the header
+            all_nonempty = [l for l in text.splitlines() if l.strip()]
+            data_line_count = max(0, len(all_nonempty) - 1)  # subtract header row
+            dup_count = max(0, data_line_count - len(entries))
             info = (
                 f"Parsed: {len(entries)} unique entries\n"
                 f"Counterparty: {ws_cp or 'unknown'}"
             )
             if dup_count > 0:
                 info += f"\n({dup_count} duplicate rows removed)"
+            if len(entries) == 0:
+                detected_hdrs = get_detected_ws_headers(text)
+                if detected_hdrs:
+                    info += f"\n\nDetected headers: {', '.join(detected_hdrs)}"
+                    info += "\n(Check that 'Ext Deal #' column is present)"
+                else:
+                    info += "\n\nNo header row detected in paste."
             self.lbl_ws_info.setText(info)
             self._populate_ws_preview()
         except Exception as e:

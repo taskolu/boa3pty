@@ -21,6 +21,83 @@ DEFAULT_WS_COLUMNS = {
     "external_ref":   "Ext Deal #",
 }
 
+# Aliases for each field — tried if exact match not found.
+# Lower-cased for comparison.  Keep these SPECIFIC to avoid false matches.
+_WS_ALIASES = {
+    "external_ref": [
+        "ext deal #", "ext deal#", "ext. deal #", "external ref",
+        "external reference", "ext ref", "ext. ref", "external deal #",
+        "ext deal no", "external deal no", "ext deal number",
+        "external deal number",
+    ],
+    "value_date": [
+        "value date", "val date", "vdate", "settlement date",
+        "settle date", "value_date",
+    ],
+    "counterparty": [
+        "customer", "counterparty", "client", "cp name",
+        "counterparty name", "bank name",
+    ],
+    "pay_ccy": [
+        "pay ccy", "pay currency", "payment currency", "sell ccy",
+        "sell currency", "from ccy", "from currency",
+    ],
+    "pay_amount": [
+        "pay amount", "payment amount", "sell amount", "from amount",
+        "pay amt",
+    ],
+    "rec_ccy": [
+        "rec ccy", "rec currency", "receive currency", "buy ccy",
+        "buy currency", "to ccy", "to currency",
+    ],
+    "rec_amount": [
+        "rec amount", "receive amount", "buy amount", "to amount",
+        "rec amt",
+    ],
+    "rate": ["rate", "fx rate", "exchange rate", "exch rate", "all in rate"],
+    "trader": ["trader", "dealer", "booked by", "entered by"],
+    "deal_type": ["deal type", "type", "product", "instrument", "category"],
+    "wallstreet_ref": [
+        "deal #", "deal#", "deal no", "deal number", "ws ref",
+        "internal ref",
+    ],
+}
+
+_WS_DATE_FORMATS = [
+    "%d %b %Y",   # 18 Mar 2026
+    "%d-%b-%Y",   # 18-Mar-2026
+    "%Y-%m-%d",   # 2026-03-18
+    "%d/%m/%Y",   # 18/03/2026
+    "%m/%d/%Y",   # 03/18/2026
+    "%d %B %Y",   # 18 March 2026
+]
+
+
+def _resolve_col_idx(headers_lower: dict, field_key: str, override_name: str) -> Optional[int]:
+    """
+    Find the index for a field by checking:
+      1. The exact override_name (from mapping, lowercased)
+      2. All aliases for the field
+    headers_lower: {lower_header_name: original_index}
+    """
+    # Exact match first
+    if override_name.lower() in headers_lower:
+        return headers_lower[override_name.lower()]
+    # Alias match
+    for alias in _WS_ALIASES.get(field_key, []):
+        if alias in headers_lower:
+            return headers_lower[alias]
+    return None
+
+
+def _parse_date(raw: str) -> object:
+    for fmt in _WS_DATE_FORMATS:
+        try:
+            return datetime.strptime(raw.strip(), fmt).date()
+        except ValueError:
+            continue
+    raise ValueError(f"Could not parse date: {raw!r}")
+
 
 def parse_wallstreet_paste(
     pasted_text: str,
@@ -28,15 +105,14 @@ def parse_wallstreet_paste(
 ) -> tuple[list[WSEntry], Optional[str]]:
     """Parse tab-separated WallStreet data from clipboard paste.
 
-    Column order is determined by header names, not position, so the paste
-    works regardless of how the user has arranged columns in WallStreet.
+    Column order is determined by header names (with alias fallbacks), not
+    position, so the paste works regardless of column arrangement.
 
     col_map_override: dict of {field_key: column_header_name} to override
                       any of the DEFAULT_WS_COLUMNS entries.
 
     Returns (list of WSEntry, detected counterparty name).
-    Deduplicates rows by external_ref (Ext Deal #) — WallStreet often
-    pastes the same data twice in sorted order.
+    Deduplicates rows by external_ref (Ext Deal #).
     """
     mapping = {**DEFAULT_WS_COLUMNS, **(col_map_override or {})}
 
@@ -46,27 +122,35 @@ def parse_wallstreet_paste(
 
     lines = [l for l in text.splitlines() if l.strip()]
 
-    # Find the header row: the line that contains the value_date column name
+    # Find the header row: find a line containing a value_date-like column name
     header_line_idx = None
-    vd_col_name = mapping["value_date"]
+    vd_col_name = mapping["value_date"].lower()
+    vd_aliases = [vd_col_name] + _WS_ALIASES.get("value_date", [])
     for i, line in enumerate(lines):
-        if vd_col_name in line:
+        line_lower = line.lower()
+        if any(alias in line_lower for alias in vd_aliases):
             header_line_idx = i
             break
 
     if header_line_idx is None:
         raise ValueError(
-            f"Could not find WallStreet header row "
-            f"(looking for column '{vd_col_name}')"
+            "Could not find WallStreet header row "
+            f"(looking for column '{mapping['value_date']}'). "
+            f"First line seen: {lines[0][:80] if lines else '<empty>'!r}"
         )
 
-    headers = lines[header_line_idx].split("\t")
-    # Build lookup: column_header_name → index
-    col_idx = {v.strip(): i for i, v in enumerate(headers)}
+    raw_headers = lines[header_line_idx].split("\t")
+    # Build lookup: lower_header_name → index
+    headers_lower = {h.strip().lower(): i for i, h in enumerate(raw_headers)}
+
+    # Resolve column indices for all fields
+    col_indices = {}
+    for field_key, col_name in mapping.items():
+        idx = _resolve_col_idx(headers_lower, field_key, col_name)
+        col_indices[field_key] = idx
 
     def get(cells: list[str], field_key: str) -> str:
-        col_name = mapping[field_key]
-        idx = col_idx.get(col_name)
+        idx = col_indices.get(field_key)
         if idx is None or idx >= len(cells):
             return ""
         return cells[idx].strip()
@@ -90,28 +174,28 @@ def parse_wallstreet_paste(
         seen_external_refs.add(ext_ref)
 
         deal_type = get(cells, "deal_type")
-        if deal_type and deal_type.upper() != "FX":
-            continue  # Skip non-FX rows
+        if deal_type and deal_type.upper() not in ("FX", "SPOT", "FORWARD", ""):
+            continue  # Skip non-FX rows (NDF, SWAP, etc.)
 
         counterparty = get(cells, "counterparty")
         if detected_counterparty is None and counterparty:
             detected_counterparty = counterparty
 
         raw_vd = get(cells, "value_date")
-        # Support both "18 Mar 2026" and ISO "2026-03-18" formats
-        try:
-            value_date = datetime.strptime(raw_vd, "%d %b %Y").date()
-        except ValueError:
-            value_date = datetime.strptime(raw_vd, "%Y-%m-%d").date()
+        value_date = _parse_date(raw_vd)
+
+        def _decimal(s: str) -> Decimal:
+            s = s.replace(",", "").replace(" ", "")
+            return Decimal(s) if s else Decimal("0")
 
         entry = WSEntry(
             value_date=value_date,
             counterparty=counterparty,
             pay_ccy=get(cells, "pay_ccy"),
-            pay_amount=Decimal(get(cells, "pay_amount").replace(",", "")),
+            pay_amount=_decimal(get(cells, "pay_amount")),
             rec_ccy=get(cells, "rec_ccy"),
-            rec_amount=Decimal(get(cells, "rec_amount").replace(",", "")),
-            rate=Decimal(get(cells, "rate").replace(",", "")),
+            rec_amount=_decimal(get(cells, "rec_amount")),
+            rate=_decimal(get(cells, "rate")),
             trader=get(cells, "trader"),
             wallstreet_ref=get(cells, "wallstreet_ref"),
             external_ref=ext_ref,
@@ -120,3 +204,13 @@ def parse_wallstreet_paste(
         entries.append(entry)
 
     return entries, detected_counterparty
+
+
+def get_detected_ws_headers(pasted_text: str) -> list[str]:
+    """Return the raw headers found in the paste (for debugging)."""
+    lines = [l for l in pasted_text.strip().splitlines() if l.strip()]
+    vd_aliases = [DEFAULT_WS_COLUMNS["value_date"].lower()] + _WS_ALIASES.get("value_date", [])
+    for line in lines:
+        if any(alias in line.lower() for alias in vd_aliases):
+            return [h.strip() for h in line.split("\t") if h.strip()]
+    return []
