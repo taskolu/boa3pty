@@ -184,6 +184,19 @@ class ArchiveTab(QWidget):
         except Exception:
             self._archive_list = []
 
+        # If the currently selected date has no archives, jump to the most recent date that does
+        current = self._current_date_str()
+        available_dates = [a["date"] for a in self._archive_list]
+        if available_dates and current not in available_dates:
+            newest = available_dates[0]   # list_archives returns newest-first
+            try:
+                parts = newest.split("-")
+                self.dt_picker.blockSignals(True)
+                self.dt_picker.setDate(QDate(int(parts[0]), int(parts[1]), int(parts[2])))
+                self.dt_picker.blockSignals(False)
+            except Exception:
+                pass
+
         self._on_selection_changed()
 
     def _current_date_str(self) -> str:
