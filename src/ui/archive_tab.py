@@ -1,61 +1,360 @@
-import os
+from __future__ import annotations
+from datetime import date
 from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
-    QTableWidget, QTableWidgetItem, QHeaderView
+    QTableWidget, QTableWidgetItem, QHeaderView, QComboBox,
+    QFileDialog, QMessageBox, QFrame
 )
-from PyQt5.QtCore import Qt
-from PyQt5.QtGui import QFont
+from PyQt5.QtCore import Qt, QDate
+from PyQt5.QtGui import QFont, QBrush, QColor
 
 from src.archive.archive_manager import ArchiveManager
+from src.core.app_dir import resolve_archive_path
+from src.export.report_generator import generate_payment_breakdown
+
+# ── Column colours (mirrors reconcile_tab) ─────────────────────────────────
+_WS_HDR_BG  = QColor("#1a2a3a")
+_KEY_HDR_BG = QColor("#3a2a00")
+_GPG_HDR_BG = QColor("#1a3a1a")
+
+_STATUS_BG = {
+    "matched":              QColor("#152815"),
+    "unmatched_gpg":        QColor("#301010"),
+    "unmatched_ws":         QColor("#2a1800"),
+    "flagged_dt06":         QColor("#181828"),
+    "resolved_from_archive":QColor("#152015"),
+    "amount_mismatch":      QColor("#2a1200"),
+    "currency_mismatch":    QColor("#2a1200"),
+}
+_STATUS_FG = {
+    "matched":               QColor("#4caf50"),
+    "unmatched_gpg":         QColor("#ef5350"),
+    "unmatched_ws":          QColor("#ff9800"),
+    "flagged_dt06":          QColor("#9fa8da"),
+    "resolved_from_archive": QColor("#81c784"),
+    "amount_mismatch":       QColor("#ff7043"),
+    "currency_mismatch":     QColor("#ff7043"),
+}
+_STATUS_LABEL = {
+    "matched":               "✓  Matched",
+    "unmatched_gpg":         "✗  Missing in WS",
+    "unmatched_ws":          "⚠  Extra in WS",
+    "flagged_dt06":          "⏳  DT06",
+    "resolved_from_archive": "↩  Resolved",
+    "amount_mismatch":       "$  Amt Mismatch",
+    "currency_mismatch":     "€  Ccy Mismatch",
+}
+
+# Same columns as Reconcile tab
+_HEADERS = [
+    "Status",
+    "Value Date",
+    "Pay Currency",
+    "Pay Amount",
+    "Rate",
+    "Buy Ccy",
+    "Buy Amount",
+    "WS Deal #",
+    "Conf # / Ext Deal #",   # key col = 8
+    "GPG Status",
+    "GPG Value Date",
+    "GPG Amount",
+    "Currency",
+    "Client Account",
+    "Arrival Date",
+    "Notes",
+]
+_CONF_COL = 8
+_WS_COLS  = [1, 2, 3, 4, 5, 6, 7]
+_GPG_COLS = [9, 10, 11, 12, 13, 14, 15]
 
 
 class ArchiveTab(QWidget):
     def __init__(self, config_manager):
         super().__init__()
         self.config = config_manager
+        self._archive_list: list[dict] = []   # [{date, counterparty, file}]
+        self._current_rows: list[dict] = []
         self._init_ui()
+        self.refresh()
 
     def _init_ui(self):
         layout = QVBoxLayout(self)
 
-        top = QHBoxLayout()
-        top.addWidget(QLabel("Past Reconciliations"))
-        top.addStretch()
+        # ── Controls bar ──────────────────────────────────────────────
+        ctrl = QHBoxLayout()
+
+        ctrl.addWidget(QLabel("Date:"))
+        self.cmb_date = QComboBox()
+        self.cmb_date.setMinimumWidth(130)
+        self.cmb_date.currentIndexChanged.connect(self._on_selection_changed)
+        ctrl.addWidget(self.cmb_date)
+
+        ctrl.addWidget(QLabel("Counterparty:"))
+        self.cmb_cp = QComboBox()
+        self.cmb_cp.setMinimumWidth(160)
+        self.cmb_cp.currentIndexChanged.connect(self._load_selected)
+        ctrl.addWidget(self.cmb_cp)
+
         self.btn_refresh = QPushButton("Refresh")
         self.btn_refresh.clicked.connect(self.refresh)
-        top.addWidget(self.btn_refresh)
-        layout.addLayout(top)
+        ctrl.addWidget(self.btn_refresh)
 
+        ctrl.addStretch()
+
+        self.lbl_count = QLabel("")
+        self.lbl_count.setStyleSheet("color: #aaaaaa;")
+        ctrl.addWidget(self.lbl_count)
+
+        self.btn_export = QPushButton("Export to Excel…")
+        self.btn_export.setEnabled(False)
+        self.btn_export.setStyleSheet(
+            "QPushButton{background:#4472C4;color:white;border-radius:4px;padding:4px 12px}"
+            "QPushButton:hover{background:#5583d5}"
+        )
+        self.btn_export.clicked.connect(self._export)
+        ctrl.addWidget(self.btn_export)
+
+        layout.addLayout(ctrl)
+
+        # ── Section colour hints ───────────────────────────────────────
+        hint = QHBoxLayout()
+        hint.addSpacing(4)
+        ws_lbl = QLabel("◀  WallStreet")
+        ws_lbl.setStyleSheet("color: #5b9bd5; font-weight: bold; font-size: 10px;")
+        hint.addWidget(ws_lbl)
+        hint.addStretch()
+        key_lbl = QLabel("MATCHING KEY")
+        key_lbl.setStyleSheet("color: #ffc107; font-weight: bold; font-size: 10px;")
+        hint.addWidget(key_lbl)
+        hint.addStretch()
+        gpg_lbl = QLabel("GPG  ▶")
+        gpg_lbl.setStyleSheet("color: #66bb6a; font-weight: bold; font-size: 10px;")
+        hint.addWidget(gpg_lbl)
+        hint.addSpacing(4)
+        layout.addLayout(hint)
+
+        # ── Table ─────────────────────────────────────────────────────
         self.tbl = QTableWidget()
         self.tbl.setEditTriggers(QTableWidget.NoEditTriggers)
         self.tbl.setSelectionBehavior(QTableWidget.SelectRows)
         self.tbl.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeToContents)
-        self.tbl.setAlternatingRowColors(True)
         self.tbl.verticalHeader().setVisible(False)
+        self.tbl.setShowGrid(True)
+        self.tbl.setWordWrap(False)
+        self.tbl.setColumnCount(len(_HEADERS))
+        self.tbl.setHorizontalHeaderLabels(_HEADERS)
+        self._style_header()
         layout.addWidget(self.tbl, 1)
 
+    def _style_header(self):
+        hh = self.tbl.horizontalHeader()
+        for col in range(len(_HEADERS)):
+            item = QTableWidgetItem(_HEADERS[col])
+            item.setTextAlignment(Qt.AlignCenter)
+            item.setFont(QFont("Segoe UI", 8, QFont.Bold))
+            if col in _WS_COLS:
+                item.setBackground(QBrush(_WS_HDR_BG))
+                item.setForeground(QBrush(QColor("#5b9bd5")))
+            elif col == _CONF_COL:
+                item.setBackground(QBrush(_KEY_HDR_BG))
+                item.setForeground(QBrush(QColor("#ffc107")))
+            elif col in _GPG_COLS:
+                item.setBackground(QBrush(_GPG_HDR_BG))
+                item.setForeground(QBrush(QColor("#66bb6a")))
+            self.tbl.setHorizontalHeaderItem(col, item)
+
+    # ── Data loading ───────────────────────────────────────────────────
+
+    def reload_config(self):
         self.refresh()
 
     def refresh(self):
-        archive_path = self.config.archive_path
-        if not os.path.isabs(archive_path):
-            archive_path = os.path.join(
-                os.path.dirname(os.path.abspath(__file__)),
-                "..", "..", archive_path
-            )
+        try:
+            archive_path = resolve_archive_path(self.config.archive_path)
+            am = ArchiveManager(archive_path)
+            self._archive_list = am.list_archives()
+        except Exception:
+            self._archive_list = []
+
+        # Populate date dropdown (unique dates, newest first)
+        dates = []
+        seen = set()
+        for a in self._archive_list:
+            if a["date"] not in seen:
+                dates.append(a["date"])
+                seen.add(a["date"])
+
+        self.cmb_date.blockSignals(True)
+        self.cmb_date.clear()
+        self.cmb_date.addItems(dates)
+        self.cmb_date.blockSignals(False)
+
+        self._on_selection_changed()
+
+    def _on_selection_changed(self):
+        """Refresh the counterparty dropdown for the selected date."""
+        chosen_date = self.cmb_date.currentText()
+        cps = [a["counterparty"] for a in self._archive_list if a["date"] == chosen_date]
+
+        self.cmb_cp.blockSignals(True)
+        self.cmb_cp.clear()
+        self.cmb_cp.addItems(cps)
+        self.cmb_cp.blockSignals(False)
+
+        self._load_selected()
+
+    def _load_selected(self):
+        chosen_date = self.cmb_date.currentText()
+        chosen_cp   = self.cmb_cp.currentText()
+        if not chosen_date or not chosen_cp:
+            self._current_rows = []
+            self._populate_table([])
+            return
+
+        # Find the file
+        filepath = None
+        for a in self._archive_list:
+            if a["date"] == chosen_date and a["counterparty"] == chosen_cp:
+                filepath = a["file"]
+                break
+        if not filepath:
+            return
 
         try:
+            archive_path = resolve_archive_path(self.config.archive_path)
             am = ArchiveManager(archive_path)
-            archives = am.list_archives()
-        except Exception:
-            archives = []
+            rows = am.load_results_sheet(filepath)
+        except Exception as e:
+            QMessageBox.warning(self, "Load Error", str(e))
+            rows = []
 
-        headers = ["Date", "Counterparty", "File"]
-        self.tbl.setColumnCount(len(headers))
-        self.tbl.setHorizontalHeaderLabels(headers)
-        self.tbl.setRowCount(len(archives))
+        # Sort: matched first, then by WS_RecCcy A-Z, WS_RecAmount asc
+        def _sort_key(r):
+            sv = str(r.get("Status", "")).lower()
+            is_matched = 0 if sv == "matched" else 1
+            ccy = str(r.get("WS_RecCcy", "") or "")
+            try:
+                amt = float(str(r.get("WS_RecAmount", 0) or 0).replace(",", ""))
+            except ValueError:
+                amt = 0.0
+            return (is_matched, ccy, amt)
 
-        for i, arch in enumerate(archives):
-            self.tbl.setItem(i, 0, QTableWidgetItem(arch["date"]))
-            self.tbl.setItem(i, 1, QTableWidgetItem(arch["counterparty"]))
-            self.tbl.setItem(i, 2, QTableWidgetItem(arch["file"]))
+        self._current_rows = sorted(rows, key=_sort_key)
+        self._populate_table(self._current_rows)
+        self.btn_export.setEnabled(bool(self._current_rows))
+
+    def _populate_table(self, rows: list[dict]):
+        self.tbl.setRowCount(len(rows))
+        self.lbl_count.setText(f"{len(rows)} records" if rows else "")
+
+        for ri, r in enumerate(rows):
+            sv = str(r.get("Status", "")).lower()
+            row_bg    = _STATUS_BG.get(sv, QColor("#252525"))
+            status_fg = _STATUS_FG.get(sv, QColor("white"))
+            key_bg    = QColor("#2a1e00") if sv == "matched" else QColor("#1e1a00")
+            conf_fg   = QColor("#4caf50") if sv == "matched" else QColor("#ffc107")
+
+            conf = str(r.get("Confirmation#", "") or "")
+            vd_ws  = str(r.get("WS_ValueDate", "") or "")
+            vd_gpg = str(r.get("GPG_ValueDate", "") or "")
+
+            row_data = [
+                # 0  Status
+                (_STATUS_LABEL.get(sv, sv),          row_bg, status_fg, True),
+                # 1  Value Date (WS)
+                (vd_ws,                              row_bg, None, False),
+                # 2  Pay Currency — not stored in archive (leave blank)
+                ("",                                 row_bg, None, False),
+                # 3  Pay Amount — not stored in archive
+                ("",                                 row_bg, None, False),
+                # 4  Rate — not stored in archive
+                ("",                                 row_bg, None, False),
+                # 5  Buy Ccy (WS rec_ccy)
+                (str(r.get("WS_RecCcy", "") or ""),  row_bg, None, False),
+                # 6  Buy Amount (WS rec_amount)
+                (str(r.get("WS_RecAmount", "") or ""), row_bg, None, False),
+                # 7  WS Deal # (WS_Ref)
+                (str(r.get("WS_Ref", "") or ""),     row_bg, None, False),
+                # 8  Conf # — key column
+                (conf,                               key_bg, conf_fg, True),
+                # 9  GPG Status
+                ("",                                 row_bg, None, False),
+                # 10 GPG Value Date
+                (vd_gpg,                             row_bg, None, False),
+                # 11 GPG Amount
+                (str(r.get("GPG_Amount", "") or ""), row_bg, None, False),
+                # 12 Currency (GPG)
+                (str(r.get("GPG_Currency", "") or ""), row_bg, None, False),
+                # 13 Client Account — not stored in archive
+                ("",                                 row_bg, None, False),
+                # 14 Arrival Date — not stored in archive
+                ("",                                 row_bg, None, False),
+                # 15 Notes / Discrepancies
+                (str(r.get("Discrepancies", "") or ""), row_bg, None, False),
+            ]
+
+            for ci, (val, bg, fg, bold) in enumerate(row_data):
+                item = QTableWidgetItem(val)
+                item.setBackground(QBrush(bg))
+                if fg:
+                    item.setForeground(QBrush(fg))
+                if bold:
+                    item.setFont(QFont("Segoe UI", 9, QFont.Bold))
+                item.setTextAlignment(Qt.AlignVCenter | Qt.AlignLeft)
+                self.tbl.setItem(ri, ci, item)
+
+        self.tbl.resizeColumnsToContents()
+
+    def _export(self):
+        if not self._current_rows:
+            return
+        path, _ = QFileDialog.getSaveFileName(
+            self, "Export Archive", "", "Excel Files (*.xlsx)"
+        )
+        if not path:
+            return
+        try:
+            # Build a simple xlsx from the raw rows
+            from openpyxl import Workbook as WB
+            from openpyxl.styles import Font, PatternFill
+            wb = WB()
+            ws = wb.active
+            ws.title = "Archive"
+
+            hdr_fill = PatternFill(start_color="4472C4", end_color="4472C4", fill_type="solid")
+            hdr_font = Font(bold=True, color="FFFFFF")
+
+            col_names = [
+                "Status", "WS Value Date", "WS Buy Ccy", "WS Buy Amount", "WS Deal #",
+                "Conf #", "GPG Currency", "GPG Amount", "GPG Value Date", "Notes"
+            ]
+            ws.append(col_names)
+            for col_idx in range(1, len(col_names) + 1):
+                cell = ws.cell(row=1, column=col_idx)
+                cell.fill = hdr_fill
+                cell.font = hdr_font
+
+            for r in self._current_rows:
+                sv = str(r.get("Status", ""))
+                ws.append([
+                    _STATUS_LABEL.get(sv.lower(), sv),
+                    str(r.get("WS_ValueDate", "") or ""),
+                    str(r.get("WS_RecCcy", "") or ""),
+                    str(r.get("WS_RecAmount", "") or ""),
+                    str(r.get("WS_Ref", "") or ""),
+                    str(r.get("Confirmation#", "") or ""),
+                    str(r.get("GPG_Currency", "") or ""),
+                    str(r.get("GPG_Amount", "") or ""),
+                    str(r.get("GPG_ValueDate", "") or ""),
+                    str(r.get("Discrepancies", "") or ""),
+                ])
+
+            for col in ws.columns:
+                max_len = max((len(str(cell.value or "")) for cell in col), default=10)
+                ws.column_dimensions[col[0].column_letter].width = min(max_len + 2, 40)
+
+            wb.save(path)
+            QMessageBox.information(self, "Export", f"Saved:\n{path}")
+        except Exception as e:
+            QMessageBox.critical(self, "Export Error", str(e))

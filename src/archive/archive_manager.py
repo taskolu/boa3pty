@@ -93,6 +93,20 @@ class ArchiveManager:
         wb.close()
         return {"summary": summary, "file": str(filepath)}
 
+    def load_results_sheet(self, filepath: str) -> list[dict]:
+        """Read the Results sheet from an archive file and return list of row dicts."""
+        wb = load_workbook(filepath, read_only=True)
+        if "Results" not in wb.sheetnames:
+            wb.close()
+            return []
+        ws = wb["Results"]
+        rows = list(ws.iter_rows(values_only=True))
+        wb.close()
+        if len(rows) < 2:
+            return []
+        headers = [str(h) if h is not None else "" for h in rows[0]]
+        return [dict(zip(headers, row)) for row in rows[1:]]
+
     def list_archives(self) -> list[dict]:
         archives = []
         for f in sorted(self._path.glob("*.xlsx"), reverse=True):

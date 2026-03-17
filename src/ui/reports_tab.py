@@ -1,4 +1,3 @@
-import os
 from datetime import date
 from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
@@ -9,6 +8,7 @@ from PyQt5.QtCore import QDate
 from src.archive.archive_manager import ArchiveManager
 from src.export.report_generator import generate_payment_breakdown
 from src.core.models import MatchStatus
+from src.core.app_dir import resolve_archive_path
 
 
 class ReportsTab(QWidget):
@@ -70,13 +70,7 @@ class ReportsTab(QWidget):
         qd = self.dt_report.date()
         report_date = date(qd.year(), qd.month(), qd.day())
 
-        archive_path = self.config.archive_path
-        if not os.path.isabs(archive_path):
-            archive_path = os.path.join(
-                os.path.dirname(os.path.abspath(__file__)),
-                "..", "..", archive_path
-            )
-
+        archive_path = resolve_archive_path(self.config.archive_path)
         try:
             am = ArchiveManager(archive_path)
             data = am.load_daily(report_date, cp_name)
