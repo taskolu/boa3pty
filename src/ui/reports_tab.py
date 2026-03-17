@@ -94,27 +94,46 @@ class ReportsTab(QWidget):
         try:
             from openpyxl import load_workbook as _lw
             from decimal import Decimal
-            from src.core.models import GPGPayment, MatchResult, MatchStatus as MS
+            from datetime import date as _date
+            from src.core.models import GPGPayment, WSEntry, MatchResult, MatchStatus as MS
 
             wb = _lw(data["file"], read_only=True)
             ws = wb["Results"]
             rows = list(ws.iter_rows(values_only=True))
             wb.close()
 
+            def _dec(v) -> Decimal:
+                try:
+                    return Decimal(str(v).replace(",", "")) if v else Decimal("0")
+                except Exception:
+                    return Decimal("0")
+
+            def _dt(v) -> _date:
+                try:
+                    return _date.fromisoformat(str(v)) if v else report_date
+                except Exception:
+                    return report_date
+
             results = []
             for row in rows[1:]:
                 if not row or not row[0]:
                     continue
+                # Archive columns (0-indexed):
+                # 0:Status 1:Conf# 2:GPG_Ccy 3:GPG_Amt 4:GPG_VD 5:GPG_StatusCode
+                # 6:WS_RecCcy 7:WS_RecAmt 8:WS_VD 9:WS_Ref 10:WS_PayCcy 11:WS_PayAmt 12:WS_Rate
                 status_val = row[0]
-                conf = row[1] or ""
-                gpg_ccy = row[2] or ""
-                gpg_amt = Decimal(str(row[3])) if row[3] else Decimal("0")
-                gpg_vd_str = row[4] or ""
-                try:
-                    from datetime import date as _date
-                    gpg_vd = _date.fromisoformat(gpg_vd_str) if gpg_vd_str else report_date
-                except ValueError:
-                    gpg_vd = report_date
+                conf       = str(row[1] or "")
+                gpg_ccy    = str(row[2] or "")
+                gpg_amt    = _dec(row[3])
+                gpg_vd     = _dt(row[4])
+
+                ws_rec_ccy = str(row[6] or "") if len(row) > 6 else ""
+                ws_rec_amt = _dec(row[7])       if len(row) > 7 else Decimal("0")
+                ws_vd      = _dt(row[8])        if len(row) > 8 else report_date
+                ws_ref     = str(row[9] or "")  if len(row) > 9 else ""
+                ws_pay_ccy = str(row[10] or "") if len(row) > 10 else ""
+                ws_pay_amt = _dec(row[11])       if len(row) > 11 else Decimal("0")
+                ws_rate    = _dec(row[12])       if len(row) > 12 else Decimal("0")
 
                 gpg = GPGPayment(
                     payment_id=conf, confirmation_number=conf,
@@ -122,11 +141,19 @@ class ReportsTab(QWidget):
                     value_date=gpg_vd, status_code=None,
                     status_message=None, counterparty=cp_name, raw_row={}
                 )
+                ws_entry = WSEntry(
+                    value_date=ws_vd, counterparty=cp_name,
+                    pay_ccy=ws_pay_ccy, pay_amount=ws_pay_amt,
+                    rec_ccy=ws_rec_ccy, rec_amount=ws_rec_amt,
+                    rate=ws_rate, trader="",
+                    wallstreet_ref=ws_ref, external_ref=conf,
+                ) if ws_ref or ws_rec_ccy else None
+
                 try:
                     status = MS(status_val)
                 except ValueError:
                     status = MS.MATCHED
-                results.append(MatchResult(status=status, gpg_record=gpg, ws_record=None))
+                results.append(MatchResult(status=status, gpg_record=gpg, ws_record=ws_entry))
 
             generate_payment_breakdown(results, out_path, report_date)
             self.lbl_status.setText(f"Exported: {out_path}")
