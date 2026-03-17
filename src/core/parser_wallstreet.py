@@ -156,12 +156,17 @@ def parse_wallstreet_paste(
         return cells[idx].strip()
 
     # Pre-process: merge continuation lines.
-    # WallStreet wraps long Customer names across two lines when copied.
-    # A proper data row always starts with a numeric row-index in the first
-    # tab-delimited cell.  Any line whose first cell is NOT a digit is a
-    # continuation of the previous row — merge its first cell onto the last
-    # cell of the previous row (completing the broken Customer field), then
-    # append the remaining cells.
+    # WallStreet can split each row across multiple lines when the Customer
+    # name contains a newline, AND again when columns overflow to a new line.
+    # Strategy:
+    #   - A new row starts when the first tab-cell is a pure integer (row #).
+    #   - For continuation lines we need to decide whether to GLUE the first
+    #     cell onto the previous row's last cell (broken mid-cell) or simply
+    #     APPEND all cells as new columns (pure column overflow).
+    #   - Heuristic: if the number of continuation cells == number of missing
+    #     columns, it is a column overflow → append all. Otherwise it is a
+    #     broken cell → glue first cell, append the rest.
+    expected_cols = len(raw_headers)  # includes the empty leading row-# header
     raw_data_lines = [l for l in lines[header_line_idx + 1:] if l.strip()]
     merged_data_lines: list[str] = []
     for line in raw_data_lines:
@@ -169,11 +174,16 @@ def parse_wallstreet_paste(
         if first_cell.isdigit() or not merged_data_lines:
             merged_data_lines.append(line)
         else:
-            # Continuation: glue first cell onto last cell of previous row
             prev_cells = merged_data_lines[-1].split("\t")
             cont_cells = line.split("\t")
-            prev_cells[-1] = prev_cells[-1].strip() + " " + cont_cells[0].strip()
-            merged_data_lines[-1] = "\t".join(prev_cells + cont_cells[1:])
+            missing = expected_cols - len(prev_cells)
+            if len(cont_cells) == missing:
+                # Pure column overflow — append all cells without gluing
+                merged_data_lines[-1] = "\t".join(prev_cells + cont_cells)
+            else:
+                # Broken mid-cell — glue first cell, then append the rest
+                prev_cells[-1] = prev_cells[-1].strip() + " " + cont_cells[0].strip()
+                merged_data_lines[-1] = "\t".join(prev_cells + cont_cells[1:])
 
     seen_external_refs: set[str] = set()
     entries: list[WSEntry] = []
