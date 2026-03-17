@@ -115,7 +115,7 @@ class ReconcileTab(QWidget):
             fg = _STATUS_FG.get(sv, QColor("white"))
             count_lbl.setStyleSheet(
                 f"QLabel {{ color: {fg.name()}; font-weight: bold; "
-                "background: #252525; border-radius: 3px; padding: 1px 6px; }}"
+                f"background: #252525; border-radius: 3px; padding: 1px 6px; }}"
             )
             self._summary_labels[sv] = count_lbl
             lbl = QLabel(label.split()[-1])   # short name
@@ -333,7 +333,7 @@ class ReconcileTab(QWidget):
                 # 9  GPG Value Date
                 (gpg.value_date.strftime("%d %b %Y") if gpg else "", row_bg, None, False),
                 # 10 GPG Status
-                (gpg.status_code or ("OK" if gpg else ""), row_bg, None, False),
+                (gpg.status_code if gpg else "",           row_bg, None, False),
                 # 11 Arrival Date
                 (arrival,                               row_bg, None, False),
                 # 12 Client Account
