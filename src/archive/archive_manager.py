@@ -1,5 +1,8 @@
 from __future__ import annotations
 import os
+import shutil
+import tempfile
+import time
 from datetime import date
 from pathlib import Path
 from typing import Optional
@@ -77,7 +80,18 @@ class ArchiveManager:
                     ])
 
         filepath = self._filename(dt, counterparty)
-        wb.save(str(filepath))
+        # Write to a temp file first, then move — avoids partial-write issues
+        # and is more resilient to OneDrive sync locks on the destination.
+        tmp = tempfile.NamedTemporaryFile(
+            suffix=".xlsx", dir=str(self._path), delete=False
+        )
+        tmp.close()
+        try:
+            wb.save(tmp.name)
+            shutil.move(tmp.name, str(filepath))
+        except Exception:
+            os.unlink(tmp.name)
+            raise
 
     def load_daily(self, dt: date, counterparty: str) -> Optional[dict]:
         filepath = self._filename(dt, counterparty)
@@ -94,18 +108,36 @@ class ArchiveManager:
         return {"summary": summary, "file": str(filepath)}
 
     def load_results_sheet(self, filepath: str) -> list[dict]:
-        """Read the Results sheet from an archive file and return list of row dicts."""
-        wb = load_workbook(filepath, read_only=True)
-        if "Results" not in wb.sheetnames:
-            wb.close()
-            return []
-        ws = wb["Results"]
-        rows = list(ws.iter_rows(values_only=True))
-        wb.close()
-        if len(rows) < 2:
-            return []
-        headers = [str(h) if h is not None else "" for h in rows[0]]
-        return [dict(zip(headers, row)) for row in rows[1:]]
+        """Read the Results sheet from an archive file and return list of row dicts.
+
+        Copies the file to a temp location first so OneDrive sync locks don't
+        cause PermissionError on the shared OneDrive folder.
+        Retries up to 3 times with a short delay to handle transient locks.
+        """
+        last_err = None
+        for attempt in range(3):
+            try:
+                tmp = tempfile.NamedTemporaryFile(suffix=".xlsx", delete=False)
+                tmp.close()
+                shutil.copy2(filepath, tmp.name)
+                try:
+                    wb = load_workbook(tmp.name, read_only=True)
+                    if "Results" not in wb.sheetnames:
+                        wb.close()
+                        return []
+                    ws = wb["Results"]
+                    rows = list(ws.iter_rows(values_only=True))
+                    wb.close()
+                finally:
+                    os.unlink(tmp.name)
+                if len(rows) < 2:
+                    return []
+                headers = [str(h) if h is not None else "" for h in rows[0]]
+                return [dict(zip(headers, row)) for row in rows[1:]]
+            except PermissionError as e:
+                last_err = e
+                time.sleep(1.5)
+        raise last_err
 
     def list_archives(self) -> list[dict]:
         archives = []
