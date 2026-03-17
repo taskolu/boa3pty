@@ -9,6 +9,7 @@ from PyQt5.QtCore import Qt
 from src.archive.archive_manager import ArchiveManager
 from src.archive.history_lookup import lookup_flagged_records
 from src.core.matcher import reconcile
+from src.core.app_dir import resolve_archive_path
 from src.ui.import_tab import ImportTab
 from src.ui.reconcile_tab import ReconcileTab
 from src.ui.archive_tab import ArchiveTab
@@ -76,12 +77,7 @@ class MainWindow(QMainWindow):
         try:
             cp = self.config.get_counterparty(counterparty_name)
             lookback = cp.get("lookback_days", 5)
-            archive_path = self.config.archive_path
-            if not os.path.isabs(archive_path):
-                archive_path = os.path.join(
-                    os.path.dirname(os.path.abspath(__file__)),
-                    "..", "..", archive_path
-                )
+            archive_path = resolve_archive_path(self.config.archive_path)
             archived_flags = lookup_flagged_records(
                 archive_path, counterparty_name, lookback_days=lookback
             )
@@ -107,12 +103,7 @@ class MainWindow(QMainWindow):
             return
         label = counterparty_display or self._current_counterparty or "UNKNOWN"
         try:
-            archive_path = self.config.archive_path
-            if not os.path.isabs(archive_path):
-                archive_path = os.path.join(
-                    os.path.dirname(os.path.abspath(__file__)),
-                    "..", "..", archive_path
-                )
+            archive_path = resolve_archive_path(self.config.archive_path)
             am = ArchiveManager(archive_path)
             am.save_daily(value_date, label, self._current_results)
             self.archive_tab.refresh()

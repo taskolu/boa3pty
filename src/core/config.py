@@ -11,7 +11,8 @@ class ConfigManager:
 
     @property
     def archive_path(self) -> str:
-        return self._data.get("archive_path", "./archive")
+        # Default ".." = folder above Settings/ = BOA3PTY Archive/ on OneDrive
+        return self._data.get("archive_path", "..")
 
     @archive_path.setter
     def archive_path(self, value: str):

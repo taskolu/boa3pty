@@ -8,6 +8,7 @@ from PyQt5.QtWidgets import (
     QTableWidgetItem, QHeaderView, QGroupBox, QMessageBox, QInputDialog
 )
 from PyQt5.QtCore import pyqtSignal
+from src.core.app_dir import resolve_archive_path
 
 _SETTINGS_PWD_HASH = hashlib.sha256(b"Convera22!").hexdigest()
 
@@ -41,12 +42,21 @@ class SettingsTab(QWidget):
 
         # Archive path
         arch_group = QGroupBox("Archive Path (OneDrive folder)")
-        arch_layout = QHBoxLayout(arch_group)
+        arch_vlay = QVBoxLayout(arch_group)
+        arch_row = QHBoxLayout()
         self.txt_archive_path = QLineEdit(self.config.archive_path)
-        arch_layout.addWidget(self.txt_archive_path, 1)
+        self.txt_archive_path.setPlaceholderText("e.g. .. (folder above Settings)")
+        self.txt_archive_path.textChanged.connect(self._update_resolved_label)
+        arch_row.addWidget(self.txt_archive_path, 1)
         btn_browse = QPushButton("Browse…")
         btn_browse.clicked.connect(self._browse_archive)
-        arch_layout.addWidget(btn_browse)
+        arch_row.addWidget(btn_browse)
+        arch_vlay.addLayout(arch_row)
+        self.lbl_resolved = QLabel()
+        self.lbl_resolved.setStyleSheet("color: #aaaaaa; font-size: 9px;")
+        self.lbl_resolved.setWordWrap(True)
+        arch_vlay.addWidget(self.lbl_resolved)
+        self._update_resolved_label()
         layout.addWidget(arch_group)
 
         # Counterparties
@@ -83,11 +93,20 @@ class SettingsTab(QWidget):
         layout.addWidget(self.btn_save)
         layout.addStretch()
 
+    def _update_resolved_label(self):
+        raw = self.txt_archive_path.text().strip()
+        try:
+            resolved = resolve_archive_path(raw) if raw else ""
+        except Exception:
+            resolved = ""
+        self.lbl_resolved.setText(f"Resolved path: {resolved}" if resolved else "")
+
     def _browse_archive(self):
         if not self._check_auth():
             return
         path = QFileDialog.getExistingDirectory(self, "Select Archive Folder")
         if path:
+            # Store as absolute path (user browsed explicitly)
             self.txt_archive_path.setText(path)
 
     def _refresh_cp_list(self):
