@@ -306,8 +306,12 @@ class ArchiveTab(QWidget):
                 conf = str(fr.get("Confirmation#", "") or "")
                 if conf in dt06_confs and conf not in resolution_map:
                     sv = str(fr.get("Status", "")).lower()
-                    label = _STATUS_LABEL.get(sv, sv)
-                    resolution_map[conf] = f"→ {label} on {date_label}"
+                    disc = str(fr.get("Discrepancies", "") or "")
+                    if sv == "matched" and "Bank amended value date" in disc:
+                        resolution_map[conf] = f"→ ✓ Matched on {date_label} (bank amended value date)"
+                    else:
+                        label = _STATUS_LABEL.get(sv, sv)
+                        resolution_map[conf] = f"→ {label} on {date_label}"
 
         if not resolution_map:
             return rows

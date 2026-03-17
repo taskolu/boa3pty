@@ -57,23 +57,40 @@ def reconcile(
                         f"amount: GPG={gpg.buy_amount}, WS={ws.rec_amount}"
                     ],
                 ))
-            # Then check value date
-            elif gpg.value_date != ws.value_date:
-                results.append(MatchResult(
-                    status=MatchStatus.VALUE_DATE_MISMATCH,
-                    gpg_record=gpg,
-                    ws_record=ws,
-                    discrepancies=[
-                        f"value date: GPG={gpg.value_date.strftime('%d %b %Y')}, "
-                        f"WS={ws.value_date.strftime('%d %b %Y')}"
-                    ],
-                ))
             else:
-                results.append(MatchResult(
-                    status=MatchStatus.MATCHED,
-                    gpg_record=gpg,
-                    ws_record=ws,
-                ))
+                # Value date check:
+                # WS date > GPG date = bank amended the value date forward (normal, note it)
+                # WS date < GPG date = should never happen (real data error)
+                # WS date == GPG date = perfect match
+                discrepancies = []
+                if ws.value_date > gpg.value_date:
+                    discrepancies.append(
+                        f"Bank amended value date: GPG={gpg.value_date.strftime('%d %b %Y')}"
+                        f" → WS={ws.value_date.strftime('%d %b %Y')}"
+                    )
+                    results.append(MatchResult(
+                        status=MatchStatus.MATCHED,
+                        gpg_record=gpg,
+                        ws_record=ws,
+                        discrepancies=discrepancies,
+                    ))
+                elif ws.value_date < gpg.value_date:
+                    results.append(MatchResult(
+                        status=MatchStatus.VALUE_DATE_MISMATCH,
+                        gpg_record=gpg,
+                        ws_record=ws,
+                        discrepancies=[
+                            f"WS value date earlier than GPG: "
+                            f"GPG={gpg.value_date.strftime('%d %b %Y')}, "
+                            f"WS={ws.value_date.strftime('%d %b %Y')}"
+                        ],
+                    ))
+                else:
+                    results.append(MatchResult(
+                        status=MatchStatus.MATCHED,
+                        gpg_record=gpg,
+                        ws_record=ws,
+                    ))
         else:
             # Not found in WallStreet
             if gpg.has_dt06_flag:
