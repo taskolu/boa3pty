@@ -7,7 +7,7 @@ from PySide6.QtWidgets import (
     QDialog, QDialogButtonBox, QFormLayout, QSpinBox, QCheckBox,
     QHeaderView, QAbstractItemView, QInputDialog
 )
-from PySide6.QtCore import Signal
+from PySide6.QtCore import Signal, Qt
 
 from qfluentwidgets import (
     PushButton, PrimaryPushButton, SubtitleLabel, BodyLabel, CaptionLabel,
@@ -276,7 +276,7 @@ class CounterpartyDialog(QDialog):
         existing_map = config.get("csv_column_mapping", {})
         for i, field in enumerate(self._STANDARD_FIELDS):
             field_item = QTableWidgetItem(field)
-            field_item.setFlags(field_item.flags() & ~0x2)
+            field_item.setFlags(field_item.flags() & ~Qt.ItemFlag.ItemIsEditable)
             self.tbl_mapping.setItem(i, 0, field_item)
             self.tbl_mapping.setItem(i, 1, QTableWidgetItem(existing_map.get(field, "")))
         layout.addWidget(self.tbl_mapping)
@@ -304,9 +304,9 @@ class CounterpartyDialog(QDialog):
         self.tbl_ws_mapping.verticalHeader().setVisible(False)
         for i, field in enumerate(ws_fields):
             fi = QTableWidgetItem(field)
-            fi.setFlags(fi.flags() & ~0x2)
+            fi.setFlags(fi.flags() & ~Qt.ItemFlag.ItemIsEditable)
             di = QTableWidgetItem(ws_defaults[field])
-            di.setFlags(di.flags() & ~0x2)
+            di.setFlags(di.flags() & ~Qt.ItemFlag.ItemIsEditable)
             self.tbl_ws_mapping.setItem(i, 0, fi)
             self.tbl_ws_mapping.setItem(i, 1, di)
             self.tbl_ws_mapping.setItem(i, 2, QTableWidgetItem(existing_ws.get(field, "")))
