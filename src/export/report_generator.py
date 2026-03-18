@@ -95,7 +95,8 @@ def generate_payment_breakdown(
         ws.append(row)
 
         # Net: buy side positive
-        net[gpg.buy_currency] += gpg.buy_amount
+        if gpg.buy_currency:
+            net[gpg.buy_currency] += gpg.buy_amount
         # Net: pay side negative
         if wse and wse.pay_ccy and wse.pay_amount:
             net[wse.pay_ccy] -= wse.pay_amount
