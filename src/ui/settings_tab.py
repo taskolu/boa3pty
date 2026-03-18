@@ -139,6 +139,7 @@ class SettingsTab(QWidget):
         if dlg.exec_() == QDialog.Accepted:
             data = dlg.get_data()
             self.config.add_counterparty(data["name"], data["config"])
+            self.config.save()
             self._refresh_cp_list()
 
     def _edit_cp(self):
@@ -153,6 +154,7 @@ class SettingsTab(QWidget):
         if dlg.exec_() == QDialog.Accepted:
             data = dlg.get_data()
             self.config.update_counterparty(data["name"], data["config"])
+            self.config.save()
             self._refresh_cp_list()
 
     def _remove_cp(self):
@@ -169,6 +171,7 @@ class SettingsTab(QWidget):
         )
         if reply == QMessageBox.Yes:
             self.config.remove_counterparty(name)
+            self.config.save()
             self._refresh_cp_list()
 
     def _save(self):
