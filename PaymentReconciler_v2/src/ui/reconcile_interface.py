@@ -17,11 +17,20 @@ from qfluentwidgets import (
 from src.core.models import MatchStatus
 from src.export.report_generator import generate_payment_breakdown
 
+
+def _fmt_rate(v) -> str:
+    """Strip trailing zeros from a rate value (Decimal or string)."""
+    try:
+        from decimal import Decimal
+        return format(Decimal(str(v)).normalize(), 'f')
+    except Exception:
+        return str(v) if v else ""
+
 # ── Column layout ───────────────────────────────────────────────────────────
 _HEADERS = [
     "Status",
     "Value Date",       # WS value_date
-    "Pay Currency",     # WS pay_ccy
+    "Pay Ccy",          # WS pay_ccy
     "Pay Amount",       # WS pay_amount
     "Rate",
     "Buy Ccy",          # WS rec_ccy
@@ -56,14 +65,14 @@ _STATUS_BG = {
     MatchStatus.VALUE_DATE_MISMATCH.value:   QColor("#1a1a2e"),
 }
 _STATUS_LABEL = {
-    MatchStatus.MATCHED.value:               "✓  Matched",
-    MatchStatus.UNMATCHED_GPG.value:         "✗  Missing in WS",
-    MatchStatus.UNMATCHED_WS.value:          "⚠  Extra in WS",
-    MatchStatus.FLAGGED_DT06.value:          "⏳  DT06",
-    MatchStatus.RESOLVED_FROM_ARCHIVE.value: "↩  Resolved",
-    MatchStatus.AMOUNT_MISMATCH.value:       "$  Amt Mismatch",
-    MatchStatus.CURRENCY_MISMATCH.value:     "€  Ccy Mismatch",
-    MatchStatus.VALUE_DATE_MISMATCH.value:   "📅  Date Mismatch",
+    MatchStatus.MATCHED.value:               "Matched",
+    MatchStatus.UNMATCHED_GPG.value:         "Missing in WS",
+    MatchStatus.UNMATCHED_WS.value:          "Extra in WS",
+    MatchStatus.FLAGGED_DT06.value:          "DT06",
+    MatchStatus.RESOLVED_FROM_ARCHIVE.value: "Resolved",
+    MatchStatus.AMOUNT_MISMATCH.value:       "Amt Mismatch",
+    MatchStatus.CURRENCY_MISMATCH.value:     "Ccy Mismatch",
+    MatchStatus.VALUE_DATE_MISMATCH.value:   "Date Mismatch",
 }
 _STATUS_FG = {
     MatchStatus.MATCHED.value:               QColor("#4caf50"),
@@ -322,7 +331,7 @@ class ReconcileInterface(QWidget):
                 (ws.value_date.strftime("%d %b %Y") if ws else "",  row_bg, None,      False),
                 (ws.pay_ccy if ws else "",                           row_bg, None,      False),
                 (str(ws.pay_amount) if ws else "",                   row_bg, None,      False),
-                (str(ws.rate) if ws else "",                         row_bg, None,      False),
+                (_fmt_rate(ws.rate) if ws else "",                   row_bg, None,      False),
                 (ws.rec_ccy if ws else "",                           row_bg, None,      False),
                 (str(ws.rec_amount) if ws else "",                   row_bg, None,      False),
                 (ws.wallstreet_ref if ws else "",                    row_bg, None,      False),

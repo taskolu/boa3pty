@@ -17,6 +17,14 @@ from src.archive.archive_manager import ArchiveManager
 from src.core.app_dir import resolve_archive_path
 from src.export.report_generator import generate_payment_breakdown
 
+
+def _fmt_rate(v) -> str:
+    try:
+        from decimal import Decimal
+        return format(Decimal(str(v)).normalize(), 'f')
+    except Exception:
+        return str(v) if v else ""
+
 # ── Colours (mirrors reconcile) ─────────────────────────────────────────────
 _WS_HDR_BG  = QColor("#1a2a3a")
 _KEY_HDR_BG = QColor("#3a2a00")
@@ -43,20 +51,20 @@ _STATUS_FG = {
     "value_date_mismatch":   QColor("#ce93d8"),
 }
 _STATUS_LABEL = {
-    "matched":               "✓  Matched",
-    "unmatched_gpg":         "✗  Missing in WS",
-    "unmatched_ws":          "⚠  Extra in WS",
-    "flagged_dt06":          "⏳  DT06",
-    "resolved_from_archive": "↩  Resolved",
-    "amount_mismatch":       "$  Amt Mismatch",
-    "currency_mismatch":     "€  Ccy Mismatch",
-    "value_date_mismatch":   "📅  Date Mismatch",
+    "matched":               "Matched",
+    "unmatched_gpg":         "Missing in WS",
+    "unmatched_ws":          "Extra in WS",
+    "flagged_dt06":          "DT06",
+    "resolved_from_archive": "Resolved",
+    "amount_mismatch":       "Amt Mismatch",
+    "currency_mismatch":     "Ccy Mismatch",
+    "value_date_mismatch":   "Date Mismatch",
 }
 
 _HEADERS = [
     "Status",
     "Value Date",
-    "Pay Currency",
+    "Pay Ccy",
     "Pay Amount",
     "Rate",
     "Buy Ccy",
@@ -348,7 +356,7 @@ class ArchiveInterface(QWidget):
                 (vd_ws,                                        row_bg, None,      False),
                 (str(r.get("WS_PayCcy", "") or ""),            row_bg, None,      False),
                 (str(r.get("WS_PayAmount", "") or ""),         row_bg, None,      False),
-                (str(r.get("WS_Rate", "") or ""),              row_bg, None,      False),
+                (_fmt_rate(r.get("WS_Rate", "")),              row_bg, None,      False),
                 (str(r.get("WS_RecCcy", "") or ""),            row_bg, None,      False),
                 (str(r.get("WS_RecAmount", "") or ""),         row_bg, None,      False),
                 (str(r.get("WS_Ref", "") or ""),               row_bg, None,      False),
