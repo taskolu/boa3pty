@@ -1,5 +1,6 @@
 from __future__ import annotations
 import time
+from datetime import date as _date
 
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QHeaderView,
@@ -10,7 +11,7 @@ from PySide6.QtGui import QColor, QFont, QBrush
 
 from qfluentwidgets import (
     PushButton, SubtitleLabel, BodyLabel,
-    TableWidget, ComboBox
+    TableWidget, ComboBox, LineEdit
 )
 
 from src.archive.archive_manager import ArchiveManager
@@ -68,27 +69,30 @@ _STATUS_LABEL = {
     "value_date_mismatch":   "Date Mismatch",
 }
 
+# Col 0 = "Archive Date" — hidden by default, shown in search mode
 _HEADERS = [
-    "Status",
-    "Value Date",
-    "Pay Ccy",
-    "Pay Amount",
-    "Rate",
-    "Buy Ccy",
-    "Buy Amount",
-    "WS Deal #",
-    "Conf # / Ext Deal #",
-    "GPG Status",
-    "GPG Value Date",
-    "GPG Amount",
-    "Currency",
-    "Client Account",
-    "Arrival Date",
-    "Notes",
+    "Archive Date",         # 0  hidden unless search mode
+    "Status",               # 1
+    "Value Date",           # 2
+    "Pay Ccy",              # 3
+    "Pay Amount",           # 4
+    "Rate",                 # 5
+    "Buy Ccy",              # 6
+    "Buy Amount",           # 7
+    "WS Deal #",            # 8
+    "Conf # / Ext Deal #",  # 9  key col
+    "GPG Status",           # 10
+    "GPG Value Date",       # 11
+    "GPG Amount",           # 12
+    "Currency",             # 13
+    "Client Account",       # 14
+    "Arrival Date",         # 15
+    "Notes",                # 16
 ]
-_CONF_COL = 8
-_WS_COLS  = [1, 2, 3, 4, 5, 6, 7]
-_GPG_COLS = [9, 10, 11, 12, 13, 14, 15]
+_DATE_COL = 0
+_CONF_COL = 9
+_WS_COLS  = [2, 3, 4, 5, 6, 7, 8]
+_GPG_COLS = [10, 11, 12, 13, 14, 15, 16]
 
 
 class ArchiveInterface(QWidget):
@@ -143,6 +147,31 @@ class ArchiveInterface(QWidget):
 
         root.addLayout(ctrl)
 
+        # ── Search bar ────────────────────────────────────────────────
+        search_row = QHBoxLayout()
+        search_row.addWidget(BodyLabel("Find Conf #:"))
+
+        self.txt_search = LineEdit(self)
+        self.txt_search.setPlaceholderText("Search conf # across all archives…")
+        self.txt_search.setMaximumWidth(380)
+        self.txt_search.returnPressed.connect(self._search)
+        search_row.addWidget(self.txt_search)
+
+        self.btn_search_go = PushButton("Search", self)
+        self.btn_search_go.clicked.connect(self._search)
+        search_row.addWidget(self.btn_search_go)
+
+        self.btn_search_clear = PushButton("Clear", self)
+        self.btn_search_clear.clicked.connect(self._clear_search)
+        self.btn_search_clear.setVisible(False)
+        search_row.addWidget(self.btn_search_clear)
+
+        self.lbl_search_info = BodyLabel("")
+        self.lbl_search_info.setStyleSheet("color: #aaaaaa; font-size: 9px;")
+        search_row.addWidget(self.lbl_search_info)
+        search_row.addStretch()
+        root.addLayout(search_row)
+
         # ── Section hints ─────────────────────────────────────────────
         hint = QHBoxLayout()
         ws_lbl = BodyLabel("◀  WallStreet")
@@ -170,6 +199,7 @@ class ArchiveInterface(QWidget):
         self.tbl.setWordWrap(False)
         self.tbl.setColumnCount(len(_HEADERS))
         self.tbl.setHorizontalHeaderLabels(_HEADERS)
+        self.tbl.setColumnHidden(_DATE_COL, True)   # hidden until search mode
         self._style_header()
         root.addWidget(self.tbl, 1)
 
@@ -312,7 +342,6 @@ class ArchiveInterface(QWidget):
             date_label = arch["date"]
             try:
                 parts = date_label.split("-")
-                from datetime import date as _date
                 d = _date(int(parts[0]), int(parts[1]), int(parts[2]))
                 date_label = d.strftime("%d-%b")
             except Exception:
@@ -323,7 +352,7 @@ class ArchiveInterface(QWidget):
                     sv   = str(fr.get("Status", "")).lower()
                     disc = str(fr.get("Discrepancies", "") or "")
                     if sv == "matched" and "Bank amended value date" in disc:
-                        resolution_map[conf] = f"→ ✓ Matched on {date_label} (bank amended value date)"
+                        resolution_map[conf] = f"→ Matched on {date_label} (bank amended value date)"
                     else:
                         label = _STATUS_LABEL.get(sv, sv)
                         resolution_map[conf] = f"→ {label} on {date_label}"
@@ -343,10 +372,66 @@ class ArchiveInterface(QWidget):
             annotated.append(r)
         return annotated
 
+    # ── Search ─────────────────────────────────────────────────────────
+
+    def _search(self):
+        term = self.txt_search.text().strip()
+        if not term:
+            return
+
+        self.lbl_search_info.setText("Searching…")
+        self.btn_search_clear.setVisible(True)
+        self.tbl.setColumnHidden(_DATE_COL, False)
+        self.lbl_count.setText("")
+
+        try:
+            archive_path = resolve_archive_path(self.config.archive_path)
+            am = ArchiveManager(archive_path)
+        except Exception:
+            self.lbl_search_info.setText("Archive not accessible.")
+            return
+
+        term_lower = term.lower()
+        results = []
+        for arch in self._archive_list:
+            try:
+                rows = am.load_results_sheet(arch["file"])
+            except Exception:
+                continue
+            for r in rows:
+                conf   = str(r.get("Confirmation#", "") or "").lower()
+                ws_ref = str(r.get("WS_Ref", "") or "").lower()
+                if term_lower in conf or term_lower in ws_ref:
+                    r = dict(r)
+                    try:
+                        parts = arch["date"].split("-")
+                        d = _date(int(parts[0]), int(parts[1]), int(parts[2]))
+                        r["_archive_date"] = d.strftime("%d %b %Y")
+                    except Exception:
+                        r["_archive_date"] = arch["date"]
+                    results.append(r)
+
+        count = len(results)
+        self.lbl_search_info.setText(
+            f"{count} result(s) found across all archives" if count
+            else "No results found"
+        )
+        self._populate_table(results)
+
+    def _clear_search(self):
+        self.txt_search.clear()
+        self.btn_search_clear.setVisible(False)
+        self.lbl_search_info.setText("")
+        self.tbl.setColumnHidden(_DATE_COL, True)
+        self._load_selected()
+
+    # ── Table population ───────────────────────────────────────────────
+
     def _populate_table(self, rows: list[dict]):
         from PySide6.QtWidgets import QTableWidgetItem
         self.tbl.setRowCount(len(rows))
-        self.lbl_count.setText(f"{len(rows)} records" if rows else "")
+        if self.tbl.isColumnHidden(_DATE_COL):
+            self.lbl_count.setText(f"{len(rows)} records" if rows else "")
 
         for ri, r in enumerate(rows):
             sv        = str(r.get("Status", "")).lower()
@@ -355,26 +440,45 @@ class ArchiveInterface(QWidget):
             key_bg    = QColor("#2a1e00") if sv == "matched" else QColor("#1e1a00")
             conf_fg   = QColor("#4caf50") if sv == "matched" else QColor("#ffc107")
 
+            archive_date = str(r.get("_archive_date", "") or "")
             conf   = str(r.get("Confirmation#", "") or "")
             vd_ws  = str(r.get("WS_ValueDate", "") or "")
             vd_gpg = str(r.get("GPG_ValueDate", "") or "")
 
             row_data = [
+                # 0  Archive Date (search mode only)
+                (archive_date,                                  QColor("#1a1a2a"), QColor("#aaaaaa"), False),
+                # 1  Status
                 (_STATUS_LABEL.get(sv, sv),                    row_bg, status_fg, True),
+                # 2  Value Date (WS)
                 (vd_ws,                                        row_bg, None,      False),
+                # 3  Pay Ccy
                 (str(r.get("WS_PayCcy", "") or ""),            row_bg, None,      False),
-                (_fmt_amt(r.get("WS_PayAmount", "")),           row_bg, None,      False),
+                # 4  Pay Amount
+                (_fmt_amt(r.get("WS_PayAmount", "")),          row_bg, None,      False),
+                # 5  Rate
                 (_fmt_rate(r.get("WS_Rate", "")),              row_bg, None,      False),
+                # 6  Buy Ccy
                 (str(r.get("WS_RecCcy", "") or ""),            row_bg, None,      False),
+                # 7  Buy Amount
                 (_fmt_amt(r.get("WS_RecAmount", "")),          row_bg, None,      False),
+                # 8  WS Deal #
                 (str(r.get("WS_Ref", "") or ""),               row_bg, None,      False),
+                # 9  Conf # — key column
                 (conf,                                         key_bg, conf_fg,   True),
+                # 10 GPG Status
                 (str(r.get("GPG_StatusCode", "") or ""),       row_bg, None,      False),
+                # 11 GPG Value Date
                 (vd_gpg,                                       row_bg, None,      False),
+                # 12 GPG Amount
                 (_fmt_amt(r.get("GPG_Amount", "")),            row_bg, None,      False),
+                # 13 Currency (GPG)
                 (str(r.get("GPG_Currency", "") or ""),         row_bg, None,      False),
+                # 14 Client Account
                 (str(r.get("ClientAccount", "") or ""),        row_bg, None,      False),
+                # 15 Arrival Date
                 (str(r.get("ArrivalDate", "") or ""),          row_bg, None,      False),
+                # 16 Notes / Discrepancies
                 (str(r.get("Discrepancies", "") or ""),        row_bg, None,      False),
             ]
 
