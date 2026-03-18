@@ -21,10 +21,11 @@ def get_app_dir() -> str:
 def resolve_archive_path(raw_path: str) -> str:
     """Return an absolute archive path.
 
-    If raw_path is already absolute, return it unchanged.
-    If relative, resolve it relative to the app directory.
-    Example: raw_path='..' with exe in 'Settings/' → 'BOA3PTY Archive/'
+    Expands environment variables first (e.g. %OneDrive%, %USERPROFILE%),
+    so a path like '%OneDrive%\\...\\BOA3PTY Archive' works for any user.
+    If relative after expansion, resolves relative to the app directory.
     """
-    if os.path.isabs(raw_path):
-        return raw_path
-    return os.path.normpath(os.path.join(get_app_dir(), raw_path))
+    expanded = os.path.expandvars(raw_path)
+    if os.path.isabs(expanded):
+        return os.path.normpath(expanded)
+    return os.path.normpath(os.path.join(get_app_dir(), expanded))
