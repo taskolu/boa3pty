@@ -344,7 +344,7 @@ class ImportTab(QWidget):
         self.lbl_gpg_info.setText(
             f"File: {path}\n"
             f"Records: {len(records)}\n"
-            f"Counterparty: {display} (code: {bank_code}){note}"
+            f"Counterparty: {display}{note}"
         )
         self._populate_gpg_preview()
         self._check_ready()

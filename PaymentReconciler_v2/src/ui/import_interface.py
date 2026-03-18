@@ -309,7 +309,7 @@ class ImportInterface(QWidget):
         note = " (auto-detected)" if auto_created else ""
         self.lbl_gpg_info.setText(
             f"File: {os.path.basename(path)}\n"
-            f"Records: {len(records)}   Counterparty: {display} [{bank_code}]{note}"
+            f"Records: {len(records)}   Counterparty: {display}{note}"
         )
         self.tbl_gpg.setRowCount(0)
         for i, r in enumerate(records[:200]):
