@@ -147,7 +147,8 @@ class ArchiveInterface(QWidget):
         self.tbl = TableWidget(self)
         self.tbl.setEditTriggers(QAbstractItemView.NoEditTriggers)
         self.tbl.setSelectionBehavior(QAbstractItemView.SelectRows)
-        self.tbl.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeToContents)
+        self.tbl.horizontalHeader().setSectionResizeMode(QHeaderView.Interactive)
+        self.tbl.horizontalHeader().setStretchLastSection(True)
         self.tbl.verticalHeader().setVisible(False)
         self.tbl.setShowGrid(True)
         self.tbl.setWordWrap(False)
@@ -372,6 +373,10 @@ class ArchiveInterface(QWidget):
                 self.tbl.setItem(ri, ci, item)
 
         self.tbl.resizeColumnsToContents()
+        hh = self.tbl.horizontalHeader()
+        for col in range(self.tbl.columnCount() - 1):
+            if hh.sectionSize(col) > 220:
+                hh.resizeSection(col, 220)
 
     def _export(self):
         if not self._current_rows:

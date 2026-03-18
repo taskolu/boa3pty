@@ -171,7 +171,7 @@ class ReconcileInterface(QWidget):
         self.tbl.setSelectionBehavior(QAbstractItemView.SelectRows)
         self.tbl.setContextMenuPolicy(Qt.CustomContextMenu)
         self.tbl.customContextMenuRequested.connect(self._show_context_menu)
-        self.tbl.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeToContents)
+        self.tbl.horizontalHeader().setSectionResizeMode(QHeaderView.Interactive)
         self.tbl.horizontalHeader().setStretchLastSection(True)
         self.tbl.verticalHeader().setVisible(False)
         self.tbl.setShowGrid(True)
@@ -348,6 +348,11 @@ class ReconcileInterface(QWidget):
                 self.tbl.setItem(ri, ci, item)
 
         self.tbl.resizeColumnsToContents()
+        # Cap each column: content columns max 220px, Notes column max 350px
+        hh = self.tbl.horizontalHeader()
+        for col in range(self.tbl.columnCount() - 1):  # all except last (Notes, stretches)
+            if hh.sectionSize(col) > 220:
+                hh.resizeSection(col, 220)
 
     # ── Context menu ───────────────────────────────────────────────
 
