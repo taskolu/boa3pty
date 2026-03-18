@@ -11,7 +11,13 @@ from src.ui.main_window import MainWindow
 def main():
     app = QApplication(sys.argv)
     app.setApplicationName("Payment Reconciler")
-    config_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "config.json")
+    base = os.path.dirname(os.path.abspath(__file__))
+    config_path = os.path.join(base, "config.json")
+    if not os.path.exists(config_path):
+        import shutil
+        default = os.path.join(base, "config.default.json")
+        if os.path.exists(default):
+            shutil.copy2(default, config_path)
     config = ConfigManager(config_path)
     window = MainWindow(config)
     window.show()
