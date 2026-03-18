@@ -165,13 +165,19 @@ class SettingsInterface(QWidget):
             self.config.add_counterparty(data["name"], data["config"])
             self._refresh_cp_list()
 
+    def _current_cp_name(self) -> str | None:
+        row = self.lst_cp.currentRow()
+        if row < 0:
+            row = 0
+        item = self.lst_cp.item(row)
+        return item.text() if item else None
+
     def _edit_cp(self):
         if not self._check_auth():
             return
-        item = self.lst_cp.currentItem()
-        if not item:
+        name = self._current_cp_name()
+        if not name:
             return
-        name = item.text()
         cp = self.config.get_counterparty(name)
         dlg = CounterpartyDialog(self, name=name, config=cp)
         if dlg.exec() == QDialog.Accepted:
@@ -182,10 +188,9 @@ class SettingsInterface(QWidget):
     def _remove_cp(self):
         if not self._check_auth():
             return
-        item = self.lst_cp.currentItem()
-        if not item:
+        name = self._current_cp_name()
+        if not name:
             return
-        name = item.text()
         reply = QMessageBox.question(
             self, "Remove Counterparty",
             f"Remove '{name}'?",

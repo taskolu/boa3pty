@@ -74,6 +74,17 @@ _STATUS_LABEL = {
     MatchStatus.CURRENCY_MISMATCH.value:     "Ccy Mismatch",
     MatchStatus.VALUE_DATE_MISMATCH.value:   "Date Mismatch",
 }
+# Short labels shown in the summary bar (must all be unique)
+_STATUS_SHORT = {
+    MatchStatus.MATCHED.value:               "Matched",
+    MatchStatus.UNMATCHED_GPG.value:         "Missing",
+    MatchStatus.UNMATCHED_WS.value:          "Extra",
+    MatchStatus.FLAGGED_DT06.value:          "DT06",
+    MatchStatus.RESOLVED_FROM_ARCHIVE.value: "Resolved",
+    MatchStatus.AMOUNT_MISMATCH.value:       "Amt",
+    MatchStatus.CURRENCY_MISMATCH.value:     "Ccy",
+    MatchStatus.VALUE_DATE_MISMATCH.value:   "Date",
+}
 _STATUS_FG = {
     MatchStatus.MATCHED.value:               QColor("#4caf50"),
     MatchStatus.UNMATCHED_GPG.value:         QColor("#ef5350"),
@@ -129,7 +140,7 @@ class ReconcileInterface(QWidget):
         summary_lay.setSpacing(0)
         for sv, label in _STATUS_LABEL.items():
             fg = _STATUS_FG.get(sv, QColor("white"))
-            short = label.split()[-1]
+            short = _STATUS_SHORT[sv]
             name_lbl = BodyLabel(short + " ")
             name_lbl.setStyleSheet(f"color: {fg.name()};")
             count_lbl = BodyLabel("0")
