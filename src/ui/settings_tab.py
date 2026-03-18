@@ -117,13 +117,20 @@ class SettingsTab(QWidget):
             return
         path = QFileDialog.getExistingDirectory(self, "Select Archive Folder")
         if path:
-            # Store as absolute path (user browsed explicitly)
+            onedrive = os.environ.get("OneDrive", "") or os.environ.get("OneDriveCommercial", "")
+            if onedrive:
+                norm_od = os.path.normpath(onedrive)
+                norm_path = os.path.normpath(path)
+                if norm_path.startswith(norm_od):
+                    path = "%OneDrive%" + norm_path[len(norm_od):]
             self.txt_archive_path.setText(path)
 
     def _refresh_cp_list(self):
         self.lst_cp.clear()
         for name in self.config.counterparty_names:
             self.lst_cp.addItem(name)
+        if self.lst_cp.count() > 0:
+            self.lst_cp.setCurrentRow(0)
 
     def _add_cp(self):
         if not self._check_auth():
