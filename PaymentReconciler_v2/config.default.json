@@ -4,7 +4,7 @@
   "counterparties": {
     "BOA3PTY": {
       "display_name": "BOA Exotic",
-      "csv_bank_code": "ALLCUKBOA, MGACUKBOA",
+      "csv_bank_code": "",
       "wallstreet_counterparty_name": "",
       "csv_column_mapping": {
         "payment_id": "source system payment id",

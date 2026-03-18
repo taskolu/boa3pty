@@ -41,21 +41,30 @@ class ConfigManager:
         return cp.get("display_name") or name
 
     def find_by_bank_code(self, code: str) -> Optional[str]:
-        """Match code against csv_bank_code.
+        """Match code against configured counterparties.
 
-        Pass 1: exact match against stored comma-separated codes.
-        Pass 2: suffix fallback — if the detected code ends with the same
-                last-3-chars as any stored code (e.g. 'NPRCUKBOA' → 'BOA'
-                matches 'ALLCUKBOA'), return that counterparty.
+        Pass 1: exact match against stored csv_bank_code list.
+        Pass 2: 3-char suffix match against counterparty internal name
+                (e.g. 'NPRCUKBOA' → suffix 'BOA' → found in 'BOA3PTY').
+                This means no bank codes need to be configured — any code
+                ending in 'BOA' automatically routes to the BOA3PTY counterparty.
+        Pass 3: 3-char suffix match against stored csv_bank_code entries
+                (legacy fallback for explicitly configured bank codes).
         """
         counterparties = self._data.get("counterparties", {})
-        # Exact match
+        # Pass 1: exact match against stored bank codes
         for name, cp in counterparties.items():
             stored = cp.get("csv_bank_code", "")
             codes = [c.strip() for c in stored.split(",") if c.strip()]
             if code in codes:
                 return name
-        # Suffix fallback (3-char)
+        # Pass 2: suffix match against counterparty internal name
+        if len(code) >= 3:
+            suffix = code[-3:].upper()
+            for name in counterparties:
+                if suffix in name.upper():
+                    return name
+        # Pass 3: suffix match against stored bank codes (explicit config fallback)
         if len(code) >= 3:
             suffix = code[-3:].upper()
             for name, cp in counterparties.items():
