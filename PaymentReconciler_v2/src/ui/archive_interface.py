@@ -25,6 +25,13 @@ def _fmt_rate(v) -> str:
     except Exception:
         return str(v) if v else ""
 
+
+def _fmt_amt(v) -> str:
+    try:
+        return f"{float(str(v).replace(',', '')):,.2f}" if v else ""
+    except Exception:
+        return str(v) if v else ""
+
 # ── Colours (mirrors reconcile) ─────────────────────────────────────────────
 _WS_HDR_BG  = QColor("#1a2a3a")
 _KEY_HDR_BG = QColor("#3a2a00")
@@ -153,6 +160,7 @@ class ArchiveInterface(QWidget):
 
         # ── Table ─────────────────────────────────────────────────────
         self.tbl = TableWidget(self)
+        self.tbl.setFont(QFont("Segoe UI", 8))
         self.tbl.setEditTriggers(QAbstractItemView.NoEditTriggers)
         self.tbl.setSelectionBehavior(QAbstractItemView.SelectRows)
         self.tbl.horizontalHeader().setSectionResizeMode(QHeaderView.Interactive)
@@ -355,15 +363,15 @@ class ArchiveInterface(QWidget):
                 (_STATUS_LABEL.get(sv, sv),                    row_bg, status_fg, True),
                 (vd_ws,                                        row_bg, None,      False),
                 (str(r.get("WS_PayCcy", "") or ""),            row_bg, None,      False),
-                (str(r.get("WS_PayAmount", "") or ""),         row_bg, None,      False),
+                (_fmt_amt(r.get("WS_PayAmount", "")),           row_bg, None,      False),
                 (_fmt_rate(r.get("WS_Rate", "")),              row_bg, None,      False),
                 (str(r.get("WS_RecCcy", "") or ""),            row_bg, None,      False),
-                (str(r.get("WS_RecAmount", "") or ""),         row_bg, None,      False),
+                (_fmt_amt(r.get("WS_RecAmount", "")),          row_bg, None,      False),
                 (str(r.get("WS_Ref", "") or ""),               row_bg, None,      False),
                 (conf,                                         key_bg, conf_fg,   True),
                 (str(r.get("GPG_StatusCode", "") or ""),       row_bg, None,      False),
                 (vd_gpg,                                       row_bg, None,      False),
-                (str(r.get("GPG_Amount", "") or ""),           row_bg, None,      False),
+                (_fmt_amt(r.get("GPG_Amount", "")),            row_bg, None,      False),
                 (str(r.get("GPG_Currency", "") or ""),         row_bg, None,      False),
                 (str(r.get("ClientAccount", "") or ""),        row_bg, None,      False),
                 (str(r.get("ArrivalDate", "") or ""),          row_bg, None,      False),
@@ -383,8 +391,8 @@ class ArchiveInterface(QWidget):
         self.tbl.resizeColumnsToContents()
         hh = self.tbl.horizontalHeader()
         for col in range(self.tbl.columnCount() - 1):
-            if hh.sectionSize(col) > 220:
-                hh.resizeSection(col, 220)
+            if hh.sectionSize(col) > 160:
+                hh.resizeSection(col, 160)
 
     def _export(self):
         if not self._current_rows:

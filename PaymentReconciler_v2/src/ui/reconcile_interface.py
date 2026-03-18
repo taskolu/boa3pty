@@ -19,10 +19,18 @@ from src.export.report_generator import generate_payment_breakdown
 
 
 def _fmt_rate(v) -> str:
-    """Strip trailing zeros from a rate value (Decimal or string)."""
+    """Strip trailing zeros from a rate value."""
     try:
         from decimal import Decimal
         return format(Decimal(str(v)).normalize(), 'f')
+    except Exception:
+        return str(v) if v else ""
+
+
+def _fmt_amt(v) -> str:
+    """Format a number as 1,234,567.89"""
+    try:
+        return f"{float(str(v).replace(',', '')):,.2f}" if v else ""
     except Exception:
         return str(v) if v else ""
 
@@ -187,6 +195,7 @@ class ReconcileInterface(QWidget):
 
         # ── Table ─────────────────────────────────────────────────────
         self.tbl = TableWidget(self)
+        self.tbl.setFont(QFont("Segoe UI", 8))
         self.tbl.setEditTriggers(QAbstractItemView.NoEditTriggers)
         self.tbl.setSelectionBehavior(QAbstractItemView.SelectRows)
         self.tbl.setContextMenuPolicy(Qt.CustomContextMenu)
@@ -341,16 +350,16 @@ class ReconcileInterface(QWidget):
                 (status_display,                                     row_bg, status_fg, True),
                 (ws.value_date.strftime("%d %b %Y") if ws else "",  row_bg, None,      False),
                 (ws.pay_ccy if ws else "",                           row_bg, None,      False),
-                (str(ws.pay_amount) if ws else "",                   row_bg, None,      False),
+                (_fmt_amt(ws.pay_amount) if ws else "",              row_bg, None,      False),
                 (_fmt_rate(ws.rate) if ws else "",                   row_bg, None,      False),
                 (ws.rec_ccy if ws else "",                           row_bg, None,      False),
-                (str(ws.rec_amount) if ws else "",                   row_bg, None,      False),
+                (_fmt_amt(ws.rec_amount) if ws else "",              row_bg, None,      False),
                 (ws.wallstreet_ref if ws else "",                    row_bg, None,      False),
                 (conf,  key_bg,
                  QColor("#4caf50") if sv == MatchStatus.MATCHED.value else QColor("#ffc107"), True),
                 (gpg.status_code if gpg else "",                     row_bg, None,      False),
                 (gpg.value_date.strftime("%d %b %Y") if gpg else "", row_bg, None,      False),
-                (str(gpg.buy_amount) if gpg else "",                 row_bg, None,      False),
+                (_fmt_amt(gpg.buy_amount) if gpg else "",            row_bg, None,      False),
                 (gpg.buy_currency if gpg else "",                    row_bg, None,      False),
                 (client,                                             row_bg, None,      False),
                 (arrival,                                            row_bg, None,      False),
@@ -368,11 +377,10 @@ class ReconcileInterface(QWidget):
                 self.tbl.setItem(ri, ci, item)
 
         self.tbl.resizeColumnsToContents()
-        # Cap each column: content columns max 220px, Notes column max 350px
         hh = self.tbl.horizontalHeader()
-        for col in range(self.tbl.columnCount() - 1):  # all except last (Notes, stretches)
-            if hh.sectionSize(col) > 220:
-                hh.resizeSection(col, 220)
+        for col in range(self.tbl.columnCount() - 1):
+            if hh.sectionSize(col) > 160:
+                hh.resizeSection(col, 160)
 
     # ── Context menu ───────────────────────────────────────────────
 
