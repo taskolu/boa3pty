@@ -2,8 +2,17 @@ from datetime import date
 from decimal import Decimal
 from collections import defaultdict
 from openpyxl import Workbook
-from openpyxl.styles import Font, PatternFill
-from src.core.models import MatchResult
+from openpyxl.styles import Font, PatternFill, Alignment, numbers
+from openpyxl.utils import get_column_letter
+from src.core.models import MatchResult, MatchStatus
+
+
+_HDR_FILL = PatternFill(start_color="4472C4", end_color="4472C4", fill_type="solid")
+_HDR_FONT = Font(bold=True, color="FFFFFF")
+_TOTAL_FONT = Font(bold=True)
+_NET_HDR_FILL = PatternFill(start_color="2E4A7A", end_color="2E4A7A", fill_type="solid")
+_POS_FONT = Font(bold=True, color="375623")   # dark green
+_NEG_FONT = Font(bold=True, color="9C0006")   # dark red
 
 
 def generate_payment_breakdown(
@@ -11,63 +20,135 @@ def generate_payment_breakdown(
     output_path: str,
     report_date: date,
 ):
-    """Export a payment breakdown grouped by currency to Excel."""
+    """
+    Payment breakdown sheet layout:
+
+    Left:  flat table of all payments sorted alphabetically by buy currency.
+           Columns: Conf# | Status | Value Date (GPG) | Buy Ccy | Buy Amt |
+                    WS Value Date | Pay Ccy | Pay Amt | Rate | WS Deal # | WS Ext Deal #
+
+    Right: net amounts grid starting two columns after the main table.
+           Header: Ccy | Total
+           One row per currency.
+           Buy-side amounts (exotic received) → positive.
+           Pay-side amounts (USD paid) → negative.
+    """
     wb = Workbook()
     ws = wb.active
     ws.title = "Payment Breakdown"
 
-    ws.append(["Payment Breakdown Report"])
+    # ── Title block ───────────────────────────────────────────────────────────
+    ws["A1"] = "Payment Breakdown Report"
     ws["A1"].font = Font(bold=True, size=14)
-    ws.append(["Date:", report_date.isoformat()])
-    ws.append(["Total Records:", len(results)])
-    ws.append([])
+    ws["A2"] = "Date:"
+    ws["B2"] = report_date.strftime("%d %b %Y")
+    ws["A3"] = "Total Records:"
+    ws["B3"] = len(results)
+    ws.append([])   # blank row 4
 
-    by_ccy: dict[str, list[MatchResult]] = defaultdict(list)
-    for r in results:
-        if r.gpg_record:
-            by_ccy[r.gpg_record.buy_currency].append(r)
-
-    headers = [
-        "Confirmation#", "Status", "Currency", "Amount",
-        "Value Date (GPG)", "Value Date (WS)", "WS Deal #", "WS Ext Deal #"
+    # ── Main table headers (row 5) ────────────────────────────────────────────
+    MAIN_HEADERS = [
+        "Conf #", "Status",
+        "Value Date (GPG)", "Buy Ccy", "Buy Amount",
+        "Value Date (WS)", "Pay Ccy", "Pay Amount", "Rate",
+        "WS Deal #", "WS Ext Deal #",
     ]
-    header_fill = PatternFill(start_color="4472C4", end_color="4472C4", fill_type="solid")
-    header_font = Font(bold=True, color="FFFFFF")
+    HDR_ROW = 5
+    for col_idx, h in enumerate(MAIN_HEADERS, 1):
+        cell = ws.cell(row=HDR_ROW, column=col_idx, value=h)
+        cell.fill = _HDR_FILL
+        cell.font = _HDR_FONT
+        cell.alignment = Alignment(horizontal="center")
 
-    for ccy, records in sorted(by_ccy.items()):
-        ws.append([f"Currency: {ccy}"])
-        ws.cell(row=ws.max_row, column=1).font = Font(bold=True, size=12)
+    # ── Sort all results: alphabetically by buy_ccy, then by conf# ───────────
+    def _sort_key(r: MatchResult):
+        ccy = r.gpg_record.buy_currency if r.gpg_record else "ZZZ"
+        conf = r.gpg_record.confirmation_number if r.gpg_record else ""
+        return (ccy, conf)
 
-        row_num = ws.max_row + 1
-        ws.append(headers)
-        for col in range(1, len(headers) + 1):
-            cell = ws.cell(row=row_num, column=col)
-            cell.fill = header_fill
-            cell.font = header_font
+    sorted_results = sorted(results, key=_sort_key)
 
-        total = Decimal("0")
-        for r in records:
-            gpg = r.gpg_record
-            ws_entry = r.ws_record
-            ws.append([
-                gpg.confirmation_number,
-                r.status.value,
-                gpg.buy_currency,
-                float(gpg.buy_amount),
-                gpg.value_date.isoformat(),
-                ws_entry.value_date.isoformat() if ws_entry else "",
-                ws_entry.wallstreet_ref if ws_entry else "",
-                ws_entry.external_ref if ws_entry else "",
-            ])
-            total += gpg.buy_amount
+    # ── Fill rows ─────────────────────────────────────────────────────────────
+    # Net accumulator: ccy → Decimal (buy side positive, pay side negative)
+    net: dict[str, Decimal] = defaultdict(Decimal)
 
-        ws.append(["", "", "TOTAL:", float(total)])
-        ws.cell(row=ws.max_row, column=3).font = Font(bold=True)
-        ws.cell(row=ws.max_row, column=4).font = Font(bold=True)
-        ws.append([])
+    data_start_row = HDR_ROW + 1
+    for r in sorted_results:
+        gpg = r.gpg_record
+        wse = r.ws_record
+        if not gpg:
+            continue
 
-    for col in ws.columns:
-        max_len = max((len(str(cell.value or "")) for cell in col), default=10)
-        ws.column_dimensions[col[0].column_letter].width = min(max_len + 2, 35)
+        row = [
+            gpg.confirmation_number,
+            r.status.value,
+            gpg.value_date.strftime("%d %b %Y"),
+            gpg.buy_currency,
+            float(gpg.buy_amount),
+            wse.value_date.strftime("%d %b %Y") if wse else "",
+            wse.pay_ccy if wse else "",
+            float(wse.pay_amount) if wse else "",
+            float(wse.rate) if wse else "",
+            wse.wallstreet_ref if wse else "",
+            wse.external_ref if wse else "",
+        ]
+        ws.append(row)
+
+        # Net: buy side positive
+        net[gpg.buy_currency] += gpg.buy_amount
+        # Net: pay side negative
+        if wse and wse.pay_ccy and wse.pay_amount:
+            net[wse.pay_ccy] -= wse.pay_amount
+
+    data_end_row = ws.max_row
+
+    # Format amount columns (E=5, H=8) as numbers with 2 dp
+    for row_idx in range(data_start_row, data_end_row + 1):
+        for col_idx in (5, 8):
+            cell = ws.cell(row=row_idx, column=col_idx)
+            if cell.value:
+                cell.number_format = "#,##0.00"
+
+    # ── Column widths for main table ──────────────────────────────────────────
+    col_widths = [22, 18, 16, 10, 16, 16, 10, 16, 14, 18, 18]
+    for i, w in enumerate(col_widths, 1):
+        ws.column_dimensions[get_column_letter(i)].width = w
+
+    # ── Net grid (starts 2 columns after main table) ───────────────────────
+    NET_START_COL = len(MAIN_HEADERS) + 2   # column N (14)
+    net_hdr_row = HDR_ROW
+
+    # Header
+    for col_offset, label in enumerate(["Ccy", "Total"], 0):
+        cell = ws.cell(row=net_hdr_row, column=NET_START_COL + col_offset, value=label)
+        cell.fill = _NET_HDR_FILL
+        cell.font = _HDR_FONT
+        cell.alignment = Alignment(horizontal="center")
+
+    # Rows: buy currencies (positive) first sorted, then pay currencies (negative)
+    positives = {ccy: amt for ccy, amt in net.items() if amt >= 0}
+    negatives = {ccy: amt for ccy, amt in net.items() if amt < 0}
+
+    net_row = net_hdr_row + 1
+    for ccy in sorted(positives):
+        ws.cell(row=net_row, column=NET_START_COL, value=ccy).font = _TOTAL_FONT
+        val_cell = ws.cell(row=net_row, column=NET_START_COL + 1, value=float(positives[ccy]))
+        val_cell.number_format = "#,##0.00"
+        val_cell.font = _POS_FONT
+        net_row += 1
+
+    for ccy in sorted(negatives):
+        ws.cell(row=net_row, column=NET_START_COL, value=ccy).font = _TOTAL_FONT
+        val_cell = ws.cell(row=net_row, column=NET_START_COL + 1, value=float(negatives[ccy]))
+        val_cell.number_format = "#,##0.00"
+        val_cell.font = _NEG_FONT
+        net_row += 1
+
+    # Net grid column widths
+    ws.column_dimensions[get_column_letter(NET_START_COL)].width = 10
+    ws.column_dimensions[get_column_letter(NET_START_COL + 1)].width = 18
+
+    # Freeze panes at row 6 so headers stay visible
+    ws.freeze_panes = ws.cell(row=HDR_ROW + 1, column=1)
 
     wb.save(output_path)

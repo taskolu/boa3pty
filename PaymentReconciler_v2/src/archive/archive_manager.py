@@ -37,15 +37,25 @@ class ArchiveManager:
             ws_summary.append([status, count])
 
         # Results sheet
+        from openpyxl.styles import Font as _Font, PatternFill as _Fill
+        _hdr_fill = _Fill(start_color="4472C4", end_color="4472C4", fill_type="solid")
+        _hdr_font = _Font(bold=True, color="FFFFFF")
+
         ws_results = wb.create_sheet("Results")
-        ws_results.append([
+        _result_headers = [
             "Status", "Confirmation#", "GPG_Currency", "GPG_Amount",
             "GPG_ValueDate", "GPG_StatusCode",
             "WS_RecCcy", "WS_RecAmount", "WS_ValueDate", "WS_Ref",
             "WS_PayCcy", "WS_PayAmount", "WS_Rate",
             "ClientAccount", "ArrivalDate",
             "Discrepancies", "Resolution_Source"
-        ])
+        ]
+        ws_results.append(_result_headers)
+        for col_idx in range(1, len(_result_headers) + 1):
+            cell = ws_results.cell(row=1, column=col_idx)
+            cell.fill = _hdr_fill
+            cell.font = _hdr_font
+
         for r in results:
             gpg = r.gpg_record
             ws  = r.ws_record
@@ -73,6 +83,10 @@ class ArchiveManager:
                 "; ".join(r.discrepancies),
                 r.resolution_source or "",
             ])
+
+        for col in ws_results.columns:
+            max_len = max((len(str(cell.value or "")) for cell in col), default=10)
+            ws_results.column_dimensions[col[0].column_letter].width = min(max_len + 2, 40)
 
         # Flagged sheet (used for DT06 lookback)
         ws_flagged = wb.create_sheet("Flagged")
