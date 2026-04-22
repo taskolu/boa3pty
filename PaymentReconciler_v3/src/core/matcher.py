@@ -141,7 +141,7 @@ def _check_archive(conf_number: str, flags: list[dict] | None) -> bool:
         return False
     return any(
         f.get("confirmation_number") == conf_number
-        and f.get("status") == MatchStatus.FLAGGED_DT06.value
+        and f.get("status") in (MatchStatus.FLAGGED_DT06.value, MatchStatus.UNMATCHED_GPG.value)
         for f in flags
     )
 
@@ -151,6 +151,6 @@ def _get_archive_source(conf_number: str, flags: list[dict] | None) -> str | Non
         return None
     for f in flags:
         if (f.get("confirmation_number") == conf_number
-                and f.get("status") == MatchStatus.FLAGGED_DT06.value):
+                and f.get("status") in (MatchStatus.FLAGGED_DT06.value, MatchStatus.UNMATCHED_GPG.value)):
             return f.get("source_file")
     return None
