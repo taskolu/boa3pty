@@ -14,6 +14,7 @@ class ArchiveManager:
     def __init__(self, archive_path: str):
         self._path = Path(archive_path)
         self._path.mkdir(parents=True, exist_ok=True)
+        self._disregarded_file = self._path / "disregarded_confs.json"
 
     def _filename(self, dt: date, counterparty: str) -> Path:
         return self._path / f"{dt.isoformat()}_{counterparty}.xlsx"
@@ -231,3 +232,26 @@ class ArchiveManager:
                     "file": str(f),
                 })
         return archives
+
+    def get_disregarded_confs(self) -> set[str]:
+        if not self._disregarded_file.exists():
+            return set()
+        try:
+            import json
+            with open(self._disregarded_file, "r", encoding="utf-8") as f:
+                data = json.load(f)
+                if isinstance(data, list):
+                    return set(data)
+        except Exception:
+            pass
+        return set()
+
+    def add_disregarded_confs(self, confs: list[str]):
+        existing = self.get_disregarded_confs()
+        existing.update(confs)
+        try:
+            import json
+            with open(self._disregarded_file, "w", encoding="utf-8") as f:
+                json.dump(list(existing), f, indent=2)
+        except Exception:
+            pass

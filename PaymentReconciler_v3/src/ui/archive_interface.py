@@ -259,6 +259,10 @@ class ArchiveInterface(QWidget):
         self.tbl_missing.setHorizontalHeaderLabels(_HEADERS)
         self.tbl_missing.setColumnHidden(_DATE_COL, False) # Show date for missing
         self._style_header(self.tbl_missing)
+        
+        self.tbl_missing.setContextMenuPolicy(Qt.CustomContextMenu)
+        self.tbl_missing.customContextMenuRequested.connect(self._show_missing_context_menu)
+        
         page_missing_layout.addWidget(self.tbl_missing, 1)
 
         self.stacked_widget.addWidget(page_missing)
@@ -658,6 +662,8 @@ class ArchiveInterface(QWidget):
         # We will scan all archives in chronological order
         archives_sorted = sorted(self._archive_list, key=lambda a: a["date"])
         
+        disregarded = am.get_disregarded_confs()
+        
         all_missing = {}
         for arch in archives_sorted:
             try:
@@ -675,7 +681,7 @@ class ArchiveInterface(QWidget):
                 
             for r in rows:
                 conf = str(r.get("Confirmation#", "") or "")
-                if not conf:
+                if not conf or conf in disregarded:
                     continue
                     
                 sv = str(r.get("Status", "")).lower()
@@ -703,6 +709,51 @@ class ArchiveInterface(QWidget):
         self.btn_export_missing.setEnabled(bool(results))
         self.btn_refresh_missing.setText("Refresh Outstanding Missing")
         self.btn_refresh_missing.setEnabled(True)
+
+    def _show_missing_context_menu(self, pos):
+        from PySide6.QtWidgets import QMenu
+        selected_ranges = self.tbl_missing.selectedRanges()
+        if not selected_ranges:
+            return
+            
+        menu = QMenu(self)
+        action_disregard = menu.addAction("Disregard Selected")
+        action = menu.exec_(self.tbl_missing.viewport().mapToGlobal(pos))
+        
+        if action == action_disregard:
+            self._disregard_selected()
+
+    def _disregard_selected(self):
+        rows = set()
+        for r in self.tbl_missing.selectedRanges():
+            for i in range(r.topRow(), r.bottomRow() + 1):
+                rows.add(i)
+                
+        confs_to_disregard = []
+        for row in rows:
+            conf_item = self.tbl_missing.item(row, _CONF_COL)
+            if conf_item:
+                conf = conf_item.text().strip()
+                if conf:
+                    confs_to_disregard.append(conf)
+                    
+        if not confs_to_disregard:
+            return
+            
+        reply = QMessageBox.question(
+            self, "Confirm Disregard",
+            f"Are you sure you want to disregard {len(confs_to_disregard)} selected payment(s)?\\nThey will no longer appear in the Outstanding Missing list.",
+            QMessageBox.Yes | QMessageBox.No
+        )
+        
+        if reply == QMessageBox.Yes:
+            try:
+                archive_path = resolve_archive_path(self.config.archive_path)
+                am = ArchiveManager(archive_path)
+                am.add_disregarded_confs(confs_to_disregard)
+                self._load_outstanding_missing() # Refresh the view
+            except Exception as e:
+                QMessageBox.critical(self, "Error", f"Failed to save disregarded records:\\n{str(e)}")
 
     def _export_missing(self):
         if not hasattr(self, '_current_missing_rows') or not self._current_missing_rows:
