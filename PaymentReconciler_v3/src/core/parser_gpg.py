@@ -96,9 +96,9 @@ def parse_gpg_file(
             if val:
                 detected_bank_code = val
 
-        # Status: prefer error_code if present, else payment_status
+        # Status: prefer error_code if present, else configured status_code, else payment_status
         raw_status = ""
-        for sc_col in [column_mapping.get("status_code", ""), "error_code", "payment_status"]:
+        for sc_col in ["error_code", column_mapping.get("status_code", ""), "payment_status"]:
             if sc_col and sc_col in row:
                 raw_status = row[sc_col].strip()
                 if raw_status:
