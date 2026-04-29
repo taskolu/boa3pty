@@ -428,6 +428,8 @@ class ArchiveInterface(QWidget):
                     disc = str(fr.get("Discrepancies", "") or "")
                     if sv == "matched" and "Bank amended value date" in disc:
                         resolution_map[conf] = f"→ Matched on {date_label} (bank amended value date)"
+                    elif sv == "unmatched_ws":
+                        resolution_map[conf] = f"→ Appeared in WS on {date_label}"
                     else:
                         label = _STATUS_LABEL.get(sv, sv)
                         resolution_map[conf] = f"→ {label} on {date_label}"
@@ -446,6 +448,37 @@ class ArchiveInterface(QWidget):
                 r["Discrepancies"] = f"{existing}  {res}".strip() if existing else res
             annotated.append(r)
         return annotated
+
+    def _later_resolution_note(self, conf: str, current_date: str,
+                               am: ArchiveManager) -> str:
+        later_archives = sorted(
+            [a for a in self._archive_list if a["date"] > current_date],
+            key=lambda a: a["date"]
+        )
+        for arch in later_archives:
+            try:
+                future_rows = am.load_results_sheet(arch["file"])
+            except Exception:
+                continue
+            date_label = arch["date"]
+            try:
+                parts = date_label.split("-")
+                d = _date(int(parts[0]), int(parts[1]), int(parts[2]))
+                date_label = d.strftime("%d-%b")
+            except Exception:
+                pass
+            for fr in future_rows:
+                if str(fr.get("Confirmation#", "") or "") != conf:
+                    continue
+                sv = str(fr.get("Status", "")).lower()
+                disc = str(fr.get("Discrepancies", "") or "")
+                if sv == "matched" and "Bank amended value date" in disc:
+                    return f"→ Matched on {date_label} (bank amended value date)"
+                if sv == "unmatched_ws":
+                    return f"→ Appeared in WS on {date_label}"
+                label = _STATUS_LABEL.get(sv, sv)
+                return f"→ {label} on {date_label}"
+        return "→ Not resolved in later archives"
 
     # ── Search ─────────────────────────────────────────────────────────
 
@@ -484,6 +517,14 @@ class ArchiveInterface(QWidget):
                         r["_archive_date"] = d.strftime("%d %b %Y")
                     except Exception:
                         r["_archive_date"] = arch["date"]
+                    r["_archive_iso"] = arch["date"]
+                    if str(r.get("Status", "")).lower() in ("flagged_dt06", "unmatched_gpg"):
+                        note = self._later_resolution_note(
+                            str(r.get("Confirmation#", "") or ""),
+                            arch["date"], am
+                        )
+                        existing = str(r.get("Discrepancies", "") or "")
+                        r["Discrepancies"] = f"{existing}  {note}".strip() if existing else note
                     results.append(r)
 
         count = len(results)
@@ -692,7 +733,7 @@ class ArchiveInterface(QWidget):
                         r_copy = dict(r)
                         r_copy["_archive_date"] = formatted_date
                         all_missing[conf] = r_copy
-                elif sv in ("matched", "resolved_from_archive"):
+                elif sv in ("matched", "resolved_from_archive", "unmatched_ws"):
                     # It was resolved! Remove from missing list
                     if conf in all_missing:
                         del all_missing[conf]

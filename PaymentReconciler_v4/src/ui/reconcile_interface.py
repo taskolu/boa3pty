@@ -1,5 +1,6 @@
 from __future__ import annotations
 from datetime import date
+from decimal import Decimal
 
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QHeaderView,
@@ -142,6 +143,7 @@ class ReconcileInterface(QWidget):
         self._all_results = []
         self._counterparty = None
         self._accepted_confs: set[str] = set()
+        self._declined_suggestions: set[tuple[str, str]] = set()
         self._init_ui()
 
     def _init_ui(self):
@@ -192,6 +194,16 @@ class ReconcileInterface(QWidget):
         self.btn_accept.setEnabled(False)
         self.btn_accept.clicked.connect(self._accept_selected)
         filter_row.addWidget(self.btn_accept)
+
+        self.btn_accept_match = PushButton("Accept Suggested Match", self)
+        self.btn_accept_match.setEnabled(False)
+        self.btn_accept_match.clicked.connect(self._accept_suggested_match)
+        filter_row.addWidget(self.btn_accept_match)
+
+        self.btn_decline_match = PushButton("Decline Suggestion", self)
+        self.btn_decline_match.setEnabled(False)
+        self.btn_decline_match.clicked.connect(self._decline_suggestion)
+        filter_row.addWidget(self.btn_decline_match)
         root.addLayout(filter_row)
 
         # ── Section labels ────────────────────────────────────────────
@@ -216,7 +228,7 @@ class ReconcileInterface(QWidget):
         self.tbl.setSelectionBehavior(QAbstractItemView.SelectRows)
         self.tbl.setContextMenuPolicy(Qt.CustomContextMenu)
         self.tbl.customContextMenuRequested.connect(self._show_context_menu)
-        self.tbl.itemSelectionChanged.connect(self._update_accept_button)
+        self.tbl.itemSelectionChanged.connect(self._update_action_buttons)
         self.tbl.horizontalHeader().setSectionResizeMode(QHeaderView.Interactive)
         self.tbl.horizontalHeader().setStretchLastSection(True)
         self.tbl.verticalHeader().setVisible(False)
@@ -290,8 +302,10 @@ class ReconcileInterface(QWidget):
         self._all_results = sorted(results, key=_sort_key)
         self._counterparty = counterparty_name
         self._accepted_confs = set()
+        self._declined_suggestions = set()
         self.btn_save.setEnabled(True)
         self.btn_export.setEnabled(True)
+        self._refresh_match_suggestions()
 
         dates = [r.gpg_record.value_date for r in results if r.gpg_record]
         if dates:
@@ -303,7 +317,7 @@ class ReconcileInterface(QWidget):
 
         self._update_summary(self._all_results)
         self._populate_table(self._all_results)
-        self._update_accept_button()
+        self._update_action_buttons()
 
     def _update_summary(self, results):
         counts: dict[str, int] = {}
@@ -334,7 +348,7 @@ class ReconcileInterface(QWidget):
                     continue
             filtered.append(r)
         self._populate_table(filtered)
-        self._update_accept_button()
+        self._update_action_buttons()
 
     def _populate_table(self, results):
         from PySide6.QtWidgets import QTableWidgetItem
@@ -435,6 +449,13 @@ class ReconcileInterface(QWidget):
         ranges = self.tbl.selectedRanges()
         return ranges[0].topRow() if ranges else -1
 
+    def _record_key(self, result) -> str:
+        if result.gpg_record:
+            return result.gpg_record.confirmation_number
+        if result.ws_record:
+            return result.ws_record.external_ref
+        return ""
+
     def _result_for_table_row(self, row: int):
         if row < 0:
             return None, ""
@@ -443,21 +464,24 @@ class ReconcileInterface(QWidget):
             return None, ""
         conf = conf_item.text()
         for r in self._all_results:
-            key = (r.gpg_record.confirmation_number if r.gpg_record
-                   else r.ws_record.external_ref if r.ws_record else "")
+            key = self._record_key(r)
             if key == conf:
                 return r, conf
         return None, conf
 
-    def _update_accept_button(self):
+    def _update_action_buttons(self):
         result, conf = self._result_for_table_row(self._selected_row())
-        enabled = False
+        accept_enabled = False
+        suggestion_enabled = False
         if result:
-            enabled = (
+            accept_enabled = (
                 result.status.value in self._ACCEPTABLE_STATUSES
                 or conf in self._accepted_confs
             )
-        self.btn_accept.setEnabled(enabled)
+            suggestion_enabled = self._suggested_partner_key(result) is not None
+        self.btn_accept.setEnabled(accept_enabled)
+        self.btn_accept_match.setEnabled(suggestion_enabled)
+        self.btn_decline_match.setEnabled(suggestion_enabled)
 
     def _accept_selected(self):
         result, conf = self._result_for_table_row(self._selected_row())
@@ -483,6 +507,154 @@ class ReconcileInterface(QWidget):
             result.discrepancies.insert(0, prefix)
             self._accepted_confs.add(conf)
             self._apply_filter()
+
+    def _amount_close(self, left, right) -> bool:
+        try:
+            return abs(Decimal(str(left)) - Decimal(str(right))) <= Decimal("0.01")
+        except Exception:
+            return False
+
+    def _suggestion_pair(self, gpg_result, ws_result) -> tuple[str, str]:
+        return (self._record_key(gpg_result), self._record_key(ws_result))
+
+    def _suggested_partner_key(self, result) -> str | None:
+        prefix = "Suggested match: "
+        for note in result.discrepancies:
+            if str(note).startswith(prefix):
+                return str(note)[len(prefix):].split(" ", 1)[0]
+        return None
+
+    def _clear_suggestion_notes(self):
+        for result in self._all_results:
+            result.discrepancies = [
+                d for d in result.discrepancies
+                if not str(d).startswith("Suggested match: ")
+            ]
+
+    def _refresh_match_suggestions(self):
+        self._clear_suggestion_notes()
+        gpg_open = [
+            r for r in self._all_results
+            if r.gpg_record
+            and r.status in (MatchStatus.UNMATCHED_GPG, MatchStatus.FLAGGED_DT06)
+        ]
+        ws_open = [
+            r for r in self._all_results
+            if r.ws_record and r.status == MatchStatus.UNMATCHED_WS
+        ]
+
+        used_ws: set[str] = set()
+        for gpg_result in gpg_open:
+            gpg = gpg_result.gpg_record
+            best = None
+            best_score = -1
+            for ws_result in ws_open:
+                ws_key = self._record_key(ws_result)
+                if ws_key in used_ws:
+                    continue
+                pair = self._suggestion_pair(gpg_result, ws_result)
+                if pair in self._declined_suggestions:
+                    continue
+                ws = ws_result.ws_record
+                if gpg.buy_currency != ws.rec_ccy:
+                    continue
+                if not self._amount_close(gpg.buy_amount, ws.rec_amount):
+                    continue
+
+                days = (ws.value_date - gpg.value_date).days
+                score = 100
+                if 0 <= days <= 10:
+                    score += 20 - days
+                elif days < 0:
+                    score -= 40
+                if gpg.confirmation_number and ws.external_ref:
+                    if gpg.confirmation_number == ws.external_ref:
+                        score += 50
+                    elif (gpg.confirmation_number in ws.external_ref
+                          or ws.external_ref in gpg.confirmation_number):
+                        score += 15
+                if score > best_score:
+                    best = ws_result
+                    best_score = score
+
+            if best:
+                used_ws.add(self._record_key(best))
+                ws = best.ws_record
+                note_for_gpg = (
+                    f"Suggested match: {ws.external_ref} "
+                    f"({ws.rec_ccy} {ws.rec_amount}, WS {ws.value_date.strftime('%d %b %Y')})"
+                )
+                note_for_ws = (
+                    f"Suggested match: {gpg.confirmation_number} "
+                    f"({gpg.buy_currency} {gpg.buy_amount}, GPG {gpg.value_date.strftime('%d %b %Y')})"
+                )
+                gpg_result.discrepancies.insert(0, note_for_gpg)
+                best.discrepancies.insert(0, note_for_ws)
+
+    def _accept_suggested_match(self):
+        result, _ = self._result_for_table_row(self._selected_row())
+        if not result:
+            return
+        partner_key = self._suggested_partner_key(result)
+        if not partner_key:
+            return
+        partner = next(
+            (r for r in self._all_results if self._record_key(r) == partner_key),
+            None
+        )
+        if not partner:
+            return
+
+        gpg_result = result if result.gpg_record else partner
+        ws_result = result if result.ws_record else partner
+        if not gpg_result.gpg_record or not ws_result.ws_record:
+            return
+
+        reply = QMessageBox.question(
+            self, "Accept Suggested Match",
+            "Combine the selected GPG and WallStreet rows as an accepted match?",
+            QMessageBox.Yes | QMessageBox.No
+        )
+        if reply != QMessageBox.Yes:
+            return
+
+        gpg = gpg_result.gpg_record
+        ws = ws_result.ws_record
+        gpg_result.status = MatchStatus.MATCHED
+        gpg_result.ws_record = ws
+        gpg_result.discrepancies = [
+            f"✓ ACCEPTED MATCH: paired with WS {ws.external_ref} / {ws.wallstreet_ref}",
+            f"External ref differs: GPG={gpg.confirmation_number}, WS={ws.external_ref}",
+        ]
+        if ws.value_date != gpg.value_date:
+            gpg_result.discrepancies.append(
+                f"Value date: GPG={gpg.value_date.strftime('%d %b %Y')}, "
+                f"WS={ws.value_date.strftime('%d %b %Y')}"
+            )
+        self._all_results = [r for r in self._all_results if r is not ws_result]
+        self._refresh_match_suggestions()
+        self._update_summary(self._all_results)
+        self._apply_filter()
+
+    def _decline_suggestion(self):
+        result, _ = self._result_for_table_row(self._selected_row())
+        if not result:
+            return
+        partner_key = self._suggested_partner_key(result)
+        if not partner_key:
+            return
+        partner = next(
+            (r for r in self._all_results if self._record_key(r) == partner_key),
+            None
+        )
+        if partner:
+            pair = (
+                self._suggestion_pair(result, partner)
+                if result.gpg_record else self._suggestion_pair(partner, result)
+            )
+            self._declined_suggestions.add(pair)
+        self._refresh_match_suggestions()
+        self._apply_filter()
 
     # ── Actions ────────────────────────────────────────────────────
 
