@@ -1,0 +1,818 @@
+from __future__ import annotations
+import time
+from datetime import date as _date
+
+from PySide6.QtWidgets import (
+    QStackedWidget,
+    QWidget, QVBoxLayout, QHBoxLayout, QHeaderView,
+    QAbstractItemView, QFileDialog, QMessageBox, QDateEdit
+)
+from PySide6.QtCore import Qt, QDate
+from PySide6.QtGui import QColor, QFont, QBrush
+
+from qfluentwidgets import (
+    SegmentedWidget,
+    PushButton, SubtitleLabel, BodyLabel,
+    TableWidget, ComboBox, LineEdit
+)
+
+from src.archive.archive_manager import ArchiveManager
+from src.core.app_dir import resolve_archive_path
+from src.export.report_generator import generate_payment_breakdown
+
+
+def _fmt_rate(v) -> str:
+    try:
+        from decimal import Decimal
+        return format(Decimal(str(v)).normalize(), 'f')
+    except Exception:
+        return str(v) if v else ""
+
+
+def _fmt_amt(v) -> str:
+    try:
+        return f"{float(str(v).replace(',', '')):,.2f}" if v else ""
+    except Exception:
+        return str(v) if v else ""
+
+# ── Colours (mirrors reconcile) ─────────────────────────────────────────────
+_WS_HDR_BG  = QColor("#1a2a3a")
+_KEY_HDR_BG = QColor("#3a2a00")
+_GPG_HDR_BG = QColor("#1a3a1a")
+
+_STATUS_BG = {
+    "matched":               QColor("#152815"),
+    "unmatched_gpg":         QColor("#301010"),
+    "unmatched_ws":          QColor("#2a1800"),
+    "flagged_dt06":          QColor("#181828"),
+    "resolved_from_archive": QColor("#152015"),
+    "amount_mismatch":       QColor("#2a1200"),
+    "currency_mismatch":     QColor("#2a1200"),
+    "value_date_mismatch":   QColor("#1a1a2e"),
+}
+_STATUS_FG = {
+    "matched":               QColor("#4caf50"),
+    "unmatched_gpg":         QColor("#ef5350"),
+    "unmatched_ws":          QColor("#ff9800"),
+    "flagged_dt06":          QColor("#9fa8da"),
+    "resolved_from_archive": QColor("#81c784"),
+    "amount_mismatch":       QColor("#ff7043"),
+    "currency_mismatch":     QColor("#ff7043"),
+    "value_date_mismatch":   QColor("#ce93d8"),
+}
+_STATUS_LABEL = {
+    "matched":               "Matched",
+    "unmatched_gpg":         "Missing in WS",
+    "unmatched_ws":          "Extra in WS",
+    "flagged_dt06":          "DT06",
+    "resolved_from_archive": "Resolved from Archive",
+    "amount_mismatch":       "Amt Mismatch",
+    "currency_mismatch":     "Ccy Mismatch",
+    "value_date_mismatch":   "Date Mismatch",
+}
+
+# Col 0 = "Archive Date" — hidden by default, shown in search mode
+_HEADERS = [
+    "Archive Date",         # 0  hidden unless search mode
+    "Status",               # 1
+    "Value Date",           # 2
+    "Pay Ccy",              # 3
+    "Pay Amount",           # 4
+    "Rate",                 # 5
+    "Buy Ccy",              # 6
+    "Buy Amount",           # 7
+    "WS Deal #",            # 8
+    "Conf # / Ext Deal #",  # 9  key col
+    "GPG Status",           # 10
+    "GPG Value Date",       # 11
+    "GPG Amount",           # 12
+    "Currency",             # 13
+    "Client Account",       # 14
+    "Arrival Date",         # 15
+    "Notes",                # 16
+]
+_DATE_COL = 0
+_CONF_COL = 9
+_WS_COLS  = [2, 3, 4, 5, 6, 7, 8]
+_GPG_COLS = [10, 11, 12, 13, 14, 15, 16]
+
+
+class ArchiveInterface(QWidget):
+    def __init__(self, config_manager, parent=None):
+        super().__init__(parent=parent)
+        self.setObjectName("archiveInterface")
+        self.config = config_manager
+        self._archive_list: list[dict] = []
+        self._current_rows: list[dict] = []
+        self._last_refresh: float = 0.0
+        self._loaded_filepath: str = ""
+        self._init_ui()
+        self.refresh()
+
+    def _init_ui(self):
+        root = QVBoxLayout(self)
+        root.setContentsMargins(24, 24, 24, 24)
+        root.setSpacing(12)
+
+        header_layout = QHBoxLayout()
+        header_layout.addWidget(SubtitleLabel("Archive"))
+        header_layout.addStretch()
+        
+        self.segmented_widget = SegmentedWidget(self)
+        self.segmented_widget.addItem("daily", "Daily View")
+        self.segmented_widget.addItem("missing", "Outstanding Missing")
+        header_layout.addWidget(self.segmented_widget)
+        
+        root.addLayout(header_layout)
+
+        self.stacked_widget = QStackedWidget(self)
+        root.addWidget(self.stacked_widget, 1)
+
+        # PAGE 0: Daily View
+        page_daily = QWidget()
+        page_daily_layout = QVBoxLayout(page_daily)
+        page_daily_layout.setContentsMargins(0, 0, 0, 0)
+        page_daily_layout.setSpacing(12)
+
+        # ── Controls ──────────────────────────────────────────────────
+        ctrl = QHBoxLayout()
+        ctrl.addWidget(BodyLabel("Value Date:"))
+        self.dt_picker = QDateEdit(self)
+        self.dt_picker.setDisplayFormat("dd MMM yyyy")
+        self.dt_picker.setCalendarPopup(True)
+        self.dt_picker.setDate(QDate.currentDate())
+        self.dt_picker.dateChanged.connect(self._on_selection_changed)
+        ctrl.addWidget(self.dt_picker)
+
+        ctrl.addSpacing(12)
+        ctrl.addWidget(BodyLabel("Counterparty:"))
+        self.cmb_cp = ComboBox(self)
+        self.cmb_cp.setMinimumWidth(160)
+        self.cmb_cp.currentIndexChanged.connect(self._load_selected)
+        ctrl.addWidget(self.cmb_cp)
+
+        self.btn_refresh = PushButton("Refresh", self)
+        self.btn_refresh.clicked.connect(self.refresh)
+        ctrl.addWidget(self.btn_refresh)
+
+        ctrl.addStretch()
+
+        self.lbl_count = BodyLabel("")
+        ctrl.addWidget(self.lbl_count)
+
+        self.btn_export = PushButton("Export to Excel…", self)
+        self.btn_export.setEnabled(False)
+        self.btn_export.clicked.connect(self._export)
+        ctrl.addWidget(self.btn_export)
+
+        page_daily_layout.addLayout(ctrl)
+
+        # ── Search bar ────────────────────────────────────────────────
+        search_row = QHBoxLayout()
+        search_row.addWidget(BodyLabel("Find Conf #:"))
+
+        self.txt_search = LineEdit(self)
+        self.txt_search.setPlaceholderText("Search conf # across all archives…")
+        self.txt_search.setMaximumWidth(380)
+        self.txt_search.returnPressed.connect(self._search)
+        search_row.addWidget(self.txt_search)
+
+        self.btn_search_go = PushButton("Search", self)
+        self.btn_search_go.clicked.connect(self._search)
+        search_row.addWidget(self.btn_search_go)
+
+        self.btn_search_clear = PushButton("Clear", self)
+        self.btn_search_clear.clicked.connect(self._clear_search)
+        self.btn_search_clear.setVisible(False)
+        search_row.addWidget(self.btn_search_clear)
+
+        self.lbl_search_info = BodyLabel("")
+        self.lbl_search_info.setStyleSheet("color: #aaaaaa; font-size: 9px;")
+        search_row.addWidget(self.lbl_search_info)
+        search_row.addStretch()
+        page_daily_layout.addLayout(search_row)
+
+        # ── Section hints ─────────────────────────────────────────────
+        hint = QHBoxLayout()
+        ws_lbl = BodyLabel("◀  WallStreet")
+        ws_lbl.setStyleSheet("color: #5b9bd5; font-weight: bold; font-size: 10px;")
+        hint.addWidget(ws_lbl)
+        hint.addStretch()
+        key_lbl = BodyLabel("MATCHING KEY")
+        key_lbl.setStyleSheet("color: #ffc107; font-weight: bold; font-size: 10px;")
+        hint.addWidget(key_lbl)
+        hint.addStretch()
+        gpg_lbl = BodyLabel("GPG  ▶")
+        gpg_lbl.setStyleSheet("color: #66bb6a; font-weight: bold; font-size: 10px;")
+        hint.addWidget(gpg_lbl)
+        page_daily_layout.addLayout(hint)
+
+        # ── Table ─────────────────────────────────────────────────────
+        self.tbl = TableWidget(self)
+        self.tbl.setFont(QFont("Segoe UI", 8))
+        self.tbl.setEditTriggers(QAbstractItemView.NoEditTriggers)
+        self.tbl.setSelectionBehavior(QAbstractItemView.SelectRows)
+        self.tbl.horizontalHeader().setSectionResizeMode(QHeaderView.Interactive)
+        self.tbl.horizontalHeader().setStretchLastSection(True)
+        self.tbl.verticalHeader().setVisible(False)
+        self.tbl.setShowGrid(True)
+        self.tbl.setWordWrap(False)
+        self.tbl.setColumnCount(len(_HEADERS))
+        self.tbl.setHorizontalHeaderLabels(_HEADERS)
+        self.tbl.setColumnHidden(_DATE_COL, True)   # hidden until search mode
+        self._style_header(self.tbl)
+        page_daily_layout.addWidget(self.tbl, 1)
+
+        self.stacked_widget.addWidget(page_daily)
+
+        # PAGE 1: Outstanding Missing
+        page_missing = QWidget()
+        page_missing_layout = QVBoxLayout(page_missing)
+        page_missing_layout.setContentsMargins(0, 0, 0, 0)
+        page_missing_layout.setSpacing(12)
+        
+        missing_ctrl = QHBoxLayout()
+        self.btn_refresh_missing = PushButton("Refresh Outstanding Missing", self)
+        self.btn_refresh_missing.clicked.connect(self._load_outstanding_missing)
+        missing_ctrl.addWidget(self.btn_refresh_missing)
+        
+        self.lbl_missing_count = BodyLabel("")
+        missing_ctrl.addWidget(self.lbl_missing_count)
+        missing_ctrl.addStretch()
+        
+        self.btn_export_missing = PushButton("Export to Excel…", self)
+        self.btn_export_missing.clicked.connect(self._export_missing)
+        self.btn_export_missing.setEnabled(False)
+        missing_ctrl.addWidget(self.btn_export_missing)
+        page_missing_layout.addLayout(missing_ctrl)
+        
+        self.tbl_missing = TableWidget(self)
+        self.tbl_missing.setFont(QFont("Segoe UI", 8))
+        self.tbl_missing.setEditTriggers(QAbstractItemView.NoEditTriggers)
+        self.tbl_missing.setSelectionBehavior(QAbstractItemView.SelectRows)
+        self.tbl_missing.horizontalHeader().setSectionResizeMode(QHeaderView.Interactive)
+        self.tbl_missing.horizontalHeader().setStretchLastSection(True)
+        self.tbl_missing.verticalHeader().setVisible(False)
+        self.tbl_missing.setShowGrid(True)
+        self.tbl_missing.setWordWrap(False)
+        self.tbl_missing.setColumnCount(len(_HEADERS))
+        self.tbl_missing.setHorizontalHeaderLabels(_HEADERS)
+        self.tbl_missing.setColumnHidden(_DATE_COL, False) # Show date for missing
+        self._style_header(self.tbl_missing)
+        
+        self.tbl_missing.setContextMenuPolicy(Qt.CustomContextMenu)
+        self.tbl_missing.customContextMenuRequested.connect(self._show_missing_context_menu)
+        
+        page_missing_layout.addWidget(self.tbl_missing, 1)
+
+        self.stacked_widget.addWidget(page_missing)
+
+        # Connect Pivot
+        self.segmented_widget.currentItemChanged.connect(
+            lambda k: self.stacked_widget.setCurrentIndex(0 if k == "daily" else 1)
+        )
+        self.segmented_widget.currentItemChanged.connect(
+            lambda k: self._load_outstanding_missing() if k == "missing" else None
+        )
+        self.segmented_widget.setCurrentItem("daily")
+
+    def _style_header(self, table_widget=None):
+        if table_widget is None:
+            table_widget = self.tbl
+        from PySide6.QtWidgets import QTableWidgetItem
+        for col in range(len(_HEADERS)):
+            item = QTableWidgetItem(_HEADERS[col])
+            item.setTextAlignment(Qt.AlignCenter)
+            item.setFont(QFont("Segoe UI", 8, QFont.Bold))
+            if col in _WS_COLS:
+                item.setBackground(QBrush(_WS_HDR_BG))
+                item.setForeground(QBrush(QColor("#5b9bd5")))
+            elif col == _CONF_COL:
+                item.setBackground(QBrush(_KEY_HDR_BG))
+                item.setForeground(QBrush(QColor("#ffc107")))
+            elif col in _GPG_COLS:
+                item.setBackground(QBrush(_GPG_HDR_BG))
+                item.setForeground(QBrush(QColor("#66bb6a")))
+            table_widget.setHorizontalHeaderItem(col, item)
+
+    # ── Data loading ───────────────────────────────────────────────
+
+    def showEvent(self, event):
+        super().showEvent(event)
+        if time.monotonic() - self._last_refresh >= 30.0:
+            self.refresh()
+
+    def reload_config(self):
+        self.refresh()
+
+    def refresh(self):
+        self._last_refresh = time.monotonic()
+        self._loaded_filepath = ""
+        try:
+            archive_path = resolve_archive_path(self.config.archive_path)
+            am = ArchiveManager(archive_path)
+            self._archive_list = am.list_archives()
+        except Exception:
+            self._archive_list = []
+
+        current = self._current_date_str()
+        available_dates = [a["date"] for a in self._archive_list]
+        if available_dates and current not in available_dates:
+            newest = available_dates[0]
+            try:
+                parts = newest.split("-")
+                self.dt_picker.blockSignals(True)
+                self.dt_picker.setDate(QDate(int(parts[0]), int(parts[1]), int(parts[2])))
+                self.dt_picker.blockSignals(False)
+            except Exception:
+                pass
+
+        self._on_selection_changed()
+
+    def _current_date_str(self) -> str:
+        qd = self.dt_picker.date()
+        return f"{qd.year():04d}-{qd.month():02d}-{qd.day():02d}"
+
+    def _on_selection_changed(self):
+        chosen_date = self._current_date_str()
+        cps = [a["counterparty"] for a in self._archive_list if a["date"] == chosen_date]
+
+        self.cmb_cp.blockSignals(True)
+        self.cmb_cp.clear()
+        self.cmb_cp.addItems(cps)
+        self.cmb_cp.blockSignals(False)
+
+        self._load_selected()
+
+    def _load_selected(self):
+        chosen_date = self._current_date_str()
+        chosen_cp   = self.cmb_cp.currentText()
+        if not chosen_date or not chosen_cp:
+            self._current_rows = []
+            self._populate_table([])
+            return
+
+        filepath = None
+        for a in self._archive_list:
+            if a["date"] == chosen_date and a["counterparty"] == chosen_cp:
+                filepath = a["file"]
+                break
+        if not filepath:
+            return
+
+        if filepath == self._loaded_filepath and self._current_rows:
+            self._populate_table(self._current_rows)
+            self.btn_export.setEnabled(True)
+            return
+
+        try:
+            archive_path = resolve_archive_path(self.config.archive_path)
+            am = ArchiveManager(archive_path)
+            rows = am.load_results_sheet(filepath)
+        except Exception as e:
+            QMessageBox.warning(self, "Load Error", str(e))
+            rows = []
+
+        def _sort_key(r):
+            sv = str(r.get("Status", "")).lower()
+            is_matched = 0 if sv == "matched" else 1
+            ccy = str(r.get("WS_RecCcy", "") or "")
+            try:
+                amt = float(str(r.get("WS_RecAmount", 0) or 0).replace(",", ""))
+            except ValueError:
+                amt = 0.0
+            return (is_matched, ccy, amt)
+
+        rows = sorted(rows, key=_sort_key)
+        rows = self._annotate_dt06_resolution(rows, chosen_date, am)
+
+        self._current_rows = rows
+        self._loaded_filepath = filepath
+        self._populate_table(self._current_rows)
+        self.btn_export.setEnabled(bool(self._current_rows))
+
+    def _annotate_dt06_resolution(self, rows: list[dict], current_date: str,
+                                   am: ArchiveManager) -> list[dict]:
+        dt06_confs = {
+            str(r.get("Confirmation#", "") or "")
+            for r in rows
+            if str(r.get("Status", "")).lower() == "flagged_dt06"
+        }
+        if not dt06_confs:
+            return rows
+
+        later_archives = sorted(
+            [a for a in self._archive_list if a["date"] > current_date],
+            key=lambda a: a["date"]
+        )
+
+        resolution_map: dict[str, str] = {}
+        for arch in later_archives:
+            if not dt06_confs - set(resolution_map.keys()):
+                break
+            try:
+                future_rows = am.load_results_sheet(arch["file"])
+            except Exception:
+                continue
+            date_label = arch["date"]
+            try:
+                parts = date_label.split("-")
+                d = _date(int(parts[0]), int(parts[1]), int(parts[2]))
+                date_label = d.strftime("%d-%b")
+            except Exception:
+                pass
+            for fr in future_rows:
+                conf = str(fr.get("Confirmation#", "") or "")
+                if conf in dt06_confs and conf not in resolution_map:
+                    sv   = str(fr.get("Status", "")).lower()
+                    disc = str(fr.get("Discrepancies", "") or "")
+                    if sv == "matched" and "Bank amended value date" in disc:
+                        resolution_map[conf] = f"→ Matched on {date_label} (bank amended value date)"
+                    else:
+                        label = _STATUS_LABEL.get(sv, sv)
+                        resolution_map[conf] = f"→ {label} on {date_label}"
+
+        if not resolution_map:
+            return rows
+
+        annotated = []
+        for r in rows:
+            sv = str(r.get("Status", "")).lower()
+            if sv == "flagged_dt06":
+                conf = str(r.get("Confirmation#", "") or "")
+                res = resolution_map.get(conf, "→ Not resolved in later archives")
+                r = dict(r)
+                existing = str(r.get("Discrepancies", "") or "")
+                r["Discrepancies"] = f"{existing}  {res}".strip() if existing else res
+            annotated.append(r)
+        return annotated
+
+    # ── Search ─────────────────────────────────────────────────────────
+
+    def _search(self):
+        term = self.txt_search.text().strip()
+        if not term:
+            return
+
+        self.lbl_search_info.setText("Searching…")
+        self.btn_search_clear.setVisible(True)
+        self.tbl.setColumnHidden(_DATE_COL, False)
+        self.lbl_count.setText("")
+
+        try:
+            archive_path = resolve_archive_path(self.config.archive_path)
+            am = ArchiveManager(archive_path)
+        except Exception:
+            self.lbl_search_info.setText("Archive not accessible.")
+            return
+
+        term_lower = term.lower()
+        results = []
+        for arch in self._archive_list:
+            try:
+                rows = am.load_results_sheet(arch["file"])
+            except Exception:
+                continue
+            for r in rows:
+                conf   = str(r.get("Confirmation#", "") or "").lower()
+                ws_ref = str(r.get("WS_Ref", "") or "").lower()
+                if term_lower in conf or term_lower in ws_ref:
+                    r = dict(r)
+                    try:
+                        parts = arch["date"].split("-")
+                        d = _date(int(parts[0]), int(parts[1]), int(parts[2]))
+                        r["_archive_date"] = d.strftime("%d %b %Y")
+                    except Exception:
+                        r["_archive_date"] = arch["date"]
+                    results.append(r)
+
+        count = len(results)
+        self.lbl_search_info.setText(
+            f"{count} result(s) found across all archives" if count
+            else "No results found"
+        )
+        self._populate_table(results)
+
+    def _clear_search(self):
+        self.txt_search.clear()
+        self.btn_search_clear.setVisible(False)
+        self.lbl_search_info.setText("")
+        self.tbl.setColumnHidden(_DATE_COL, True)
+        self._load_selected()
+
+    # ── Table population ───────────────────────────────────────────────
+
+    def _populate_table(self, rows: list[dict], target_table=None):
+        if target_table is None:
+            target_table = self.tbl
+        from PySide6.QtWidgets import QTableWidgetItem
+        target_table.setRowCount(len(rows))
+        if target_table is self.tbl and self.tbl.isColumnHidden(_DATE_COL):
+            self.lbl_count.setText(f"{len(rows)} records" if rows else "")
+
+        for ri, r in enumerate(rows):
+            sv        = str(r.get("Status", "")).lower()
+            row_bg    = _STATUS_BG.get(sv, QColor("#252525"))
+            status_fg = _STATUS_FG.get(sv, QColor("white"))
+            key_bg    = QColor("#2a1e00") if sv == "matched" else QColor("#1e1a00")
+            conf_fg   = QColor("#4caf50") if sv == "matched" else QColor("#ffc107")
+
+            archive_date = str(r.get("_archive_date", "") or "")
+            conf   = str(r.get("Confirmation#", "") or "")
+            vd_ws  = str(r.get("WS_ValueDate", "") or "")
+            vd_gpg = str(r.get("GPG_ValueDate", "") or "")
+
+            row_data = [
+                # 0  Archive Date (search mode only)
+                (archive_date,                                  QColor("#1a1a2a"), QColor("#aaaaaa"), False),
+                # 1  Status
+                (_STATUS_LABEL.get(sv, sv),                    row_bg, status_fg, True),
+                # 2  Value Date (WS)
+                (vd_ws,                                        row_bg, None,      False),
+                # 3  Pay Ccy
+                (str(r.get("WS_PayCcy", "") or ""),            row_bg, None,      False),
+                # 4  Pay Amount
+                (_fmt_amt(r.get("WS_PayAmount", "")),          row_bg, None,      False),
+                # 5  Rate
+                (_fmt_rate(r.get("WS_Rate", "")),              row_bg, None,      False),
+                # 6  Buy Ccy
+                (str(r.get("WS_RecCcy", "") or ""),            row_bg, None,      False),
+                # 7  Buy Amount
+                (_fmt_amt(r.get("WS_RecAmount", "")),          row_bg, None,      False),
+                # 8  WS Deal #
+                (str(r.get("WS_Ref", "") or ""),               row_bg, None,      False),
+                # 9  Conf # — key column
+                (conf,                                         key_bg, conf_fg,   True),
+                # 10 GPG Status
+                (str(r.get("GPG_StatusCode", "") or ""),       row_bg, None,      False),
+                # 11 GPG Value Date
+                (vd_gpg,                                       row_bg, None,      False),
+                # 12 GPG Amount
+                (_fmt_amt(r.get("GPG_Amount", "")),            row_bg, None,      False),
+                # 13 Currency (GPG)
+                (str(r.get("GPG_Currency", "") or ""),         row_bg, None,      False),
+                # 14 Client Account
+                (str(r.get("ClientAccount", "") or ""),        row_bg, None,      False),
+                # 15 Arrival Date
+                (str(r.get("ArrivalDate", "") or ""),          row_bg, None,      False),
+                # 16 Notes / Discrepancies
+                (str(r.get("Discrepancies", "") or ""),        row_bg, None,      False),
+            ]
+
+            for ci, (val, bg, fg, bold) in enumerate(row_data):
+                item = QTableWidgetItem(val)
+                item.setBackground(QBrush(bg))
+                if fg:
+                    item.setForeground(QBrush(fg))
+                if bold:
+                    item.setFont(QFont("Segoe UI", 9, QFont.Bold))
+                item.setTextAlignment(Qt.AlignVCenter | Qt.AlignLeft)
+                target_table.setItem(ri, ci, item)
+
+        target_table.resizeColumnsToContents()
+        hh = target_table.horizontalHeader()
+        for col in range(target_table.columnCount() - 1):
+            if hh.sectionSize(col) > 160:
+                hh.resizeSection(col, 160)
+
+    def _export(self):
+        if not self._current_rows:
+            return
+        chosen_date = self._current_date_str()
+        chosen_cp   = self.cmb_cp.currentText()
+        default_name = f"{chosen_date}_{chosen_cp}.xlsx" if chosen_date and chosen_cp else "archive.xlsx"
+
+        path, _ = QFileDialog.getSaveFileName(
+            self, "Export Archive", default_name, "Excel Files (*.xlsx)"
+        )
+        if not path:
+            return
+        try:
+            from openpyxl import Workbook as WB
+            from openpyxl.styles import Font, PatternFill
+            wb = WB()
+            ws = wb.active
+            ws.title = "Archive"
+
+            hdr_fill = PatternFill(start_color="4472C4", end_color="4472C4", fill_type="solid")
+            hdr_font = Font(bold=True, color="FFFFFF")
+            col_names = [
+                "Status", "Value Date (WS)", "Pay Ccy", "Pay Amount", "Rate",
+                "Buy Ccy", "Buy Amount", "WS Deal #", "Conf #",
+                "GPG Status", "GPG Value Date", "GPG Amount", "Currency",
+                "Client Account", "Arrival Date", "Notes"
+            ]
+            ws.append(col_names)
+            for col_idx in range(1, len(col_names) + 1):
+                cell = ws.cell(row=1, column=col_idx)
+                cell.fill = hdr_fill
+                cell.font = hdr_font
+
+            for r in self._current_rows:
+                sv = str(r.get("Status", ""))
+                ws.append([
+                    _STATUS_LABEL.get(sv.lower(), sv),
+                    str(r.get("WS_ValueDate", "") or ""),
+                    str(r.get("WS_PayCcy", "") or ""),
+                    str(r.get("WS_PayAmount", "") or ""),
+                    str(r.get("WS_Rate", "") or ""),
+                    str(r.get("WS_RecCcy", "") or ""),
+                    str(r.get("WS_RecAmount", "") or ""),
+                    str(r.get("WS_Ref", "") or ""),
+                    str(r.get("Confirmation#", "") or ""),
+                    str(r.get("GPG_StatusCode", "") or ""),
+                    str(r.get("GPG_ValueDate", "") or ""),
+                    str(r.get("GPG_Amount", "") or ""),
+                    str(r.get("GPG_Currency", "") or ""),
+                    str(r.get("ClientAccount", "") or ""),
+                    str(r.get("ArrivalDate", "") or ""),
+                    str(r.get("Discrepancies", "") or ""),
+                ])
+
+            for col in ws.columns:
+                max_len = max((len(str(cell.value or "")) for cell in col), default=10)
+                ws.column_dimensions[col[0].column_letter].width = min(max_len + 2, 40)
+
+            wb.save(path)
+            QMessageBox.information(self, "Export", f"Saved:\n{path}")
+        except Exception as e:
+            QMessageBox.critical(self, "Export Error", str(e))
+
+    # ── Outstanding Missing ───────────────────────────────────────────
+
+    def _load_outstanding_missing(self):
+        self.btn_refresh_missing.setText("Loading...")
+        self.btn_refresh_missing.setEnabled(False)
+        self.btn_export_missing.setEnabled(False)
+        self.lbl_missing_count.setText("Scanning archives...")
+        
+        from PySide6.QtCore import QTimer
+        QTimer.singleShot(50, self._do_load_outstanding_missing)
+        
+    def _do_load_outstanding_missing(self):
+        try:
+            archive_path = resolve_archive_path(self.config.archive_path)
+            am = ArchiveManager(archive_path)
+        except Exception:
+            self.lbl_missing_count.setText("Archive not accessible.")
+            self.btn_refresh_missing.setText("Refresh Outstanding Missing")
+            self.btn_refresh_missing.setEnabled(True)
+            return
+
+        # We will scan all archives in chronological order
+        archives_sorted = sorted(self._archive_list, key=lambda a: a["date"])
+        
+        disregarded = am.get_disregarded_confs()
+        
+        all_missing = {}
+        for arch in archives_sorted:
+            try:
+                rows = am.load_results_sheet(arch["file"])
+            except Exception:
+                continue
+                
+            date_label = arch["date"]
+            try:
+                parts = date_label.split("-")
+                d = _date(int(parts[0]), int(parts[1]), int(parts[2]))
+                formatted_date = d.strftime("%d %b %Y")
+            except Exception:
+                formatted_date = date_label
+                
+            for r in rows:
+                conf = str(r.get("Confirmation#", "") or "")
+                if not conf or conf in disregarded:
+                    continue
+                    
+                sv = str(r.get("Status", "")).lower()
+                
+                if sv in ("flagged_dt06", "unmatched_gpg"):
+                    # Record it as missing if we don't have it already
+                    if conf not in all_missing:
+                        r_copy = dict(r)
+                        r_copy["_archive_date"] = formatted_date
+                        all_missing[conf] = r_copy
+                elif sv in ("matched", "resolved_from_archive"):
+                    # It was resolved! Remove from missing list
+                    if conf in all_missing:
+                        del all_missing[conf]
+                        
+        # The remaining ones in all_missing are outstanding
+        results = list(all_missing.values())
+        # Sort by date
+        results.sort(key=lambda x: x.get("_archive_date", ""))
+        
+        self.lbl_missing_count.setText(f"{len(results)} outstanding records found")
+        self._populate_table(results, target_table=self.tbl_missing)
+        
+        self._current_missing_rows = results
+        self.btn_export_missing.setEnabled(bool(results))
+        self.btn_refresh_missing.setText("Refresh Outstanding Missing")
+        self.btn_refresh_missing.setEnabled(True)
+
+    def _show_missing_context_menu(self, pos):
+        from PySide6.QtWidgets import QMenu
+        selected_ranges = self.tbl_missing.selectedRanges()
+        if not selected_ranges:
+            return
+            
+        menu = QMenu(self)
+        action_disregard = menu.addAction("Disregard Selected")
+        action = menu.exec_(self.tbl_missing.viewport().mapToGlobal(pos))
+        
+        if action == action_disregard:
+            self._disregard_selected()
+
+    def _disregard_selected(self):
+        rows = set()
+        for r in self.tbl_missing.selectedRanges():
+            for i in range(r.topRow(), r.bottomRow() + 1):
+                rows.add(i)
+                
+        confs_to_disregard = []
+        for row in rows:
+            conf_item = self.tbl_missing.item(row, _CONF_COL)
+            if conf_item:
+                conf = conf_item.text().strip()
+                if conf:
+                    confs_to_disregard.append(conf)
+                    
+        if not confs_to_disregard:
+            return
+            
+        reply = QMessageBox.question(
+            self, "Confirm Disregard",
+            f"Are you sure you want to disregard {len(confs_to_disregard)} selected payment(s)?\\nThey will no longer appear in the Outstanding Missing list.",
+            QMessageBox.Yes | QMessageBox.No
+        )
+        
+        if reply == QMessageBox.Yes:
+            try:
+                archive_path = resolve_archive_path(self.config.archive_path)
+                am = ArchiveManager(archive_path)
+                am.add_disregarded_confs(confs_to_disregard)
+                self._load_outstanding_missing() # Refresh the view
+            except Exception as e:
+                QMessageBox.critical(self, "Error", f"Failed to save disregarded records:\\n{str(e)}")
+
+    def _export_missing(self):
+        if not hasattr(self, '_current_missing_rows') or not self._current_missing_rows:
+            return
+        
+        path, _ = QFileDialog.getSaveFileName(
+            self, "Export Outstanding Missing", "outstanding_missing.xlsx", "Excel Files (*.xlsx)"
+        )
+        if not path:
+            return
+            
+        try:
+            from openpyxl import Workbook as WB
+            from openpyxl.styles import Font, PatternFill
+            wb = WB()
+            ws = wb.active
+            ws.title = "Outstanding Missing"
+
+            hdr_fill = PatternFill(start_color="4472C4", end_color="4472C4", fill_type="solid")
+            hdr_font = Font(bold=True, color="FFFFFF")
+            col_names = [
+                "Archive Date", "Status", "Value Date (WS)", "Pay Ccy", "Pay Amount", "Rate",
+                "Buy Ccy", "Buy Amount", "WS Deal #", "Conf #",
+                "GPG Status", "GPG Value Date", "GPG Amount", "Currency",
+                "Client Account", "Arrival Date", "Notes"
+            ]
+            ws.append(col_names)
+            for col_idx in range(1, len(col_names) + 1):
+                cell = ws.cell(row=1, column=col_idx)
+                cell.fill = hdr_fill
+                cell.font = hdr_font
+
+            for r in self._current_missing_rows:
+                sv = str(r.get("Status", ""))
+                ws.append([
+                    str(r.get("_archive_date", "") or ""),
+                    _STATUS_LABEL.get(sv.lower(), sv),
+                    str(r.get("WS_ValueDate", "") or ""),
+                    str(r.get("WS_PayCcy", "") or ""),
+                    str(r.get("WS_PayAmount", "") or ""),
+                    str(r.get("WS_Rate", "") or ""),
+                    str(r.get("WS_RecCcy", "") or ""),
+                    str(r.get("WS_RecAmount", "") or ""),
+                    str(r.get("WS_Ref", "") or ""),
+                    str(r.get("Confirmation#", "") or ""),
+                    str(r.get("GPG_StatusCode", "") or ""),
+                    str(r.get("GPG_ValueDate", "") or ""),
+                    str(r.get("GPG_Amount", "") or ""),
+                    str(r.get("GPG_Currency", "") or ""),
+                    str(r.get("ClientAccount", "") or ""),
+                    str(r.get("ArrivalDate", "") or ""),
+                    str(r.get("Discrepancies", "") or ""),
+                ])
+
+            for col in ws.columns:
+                max_len = max((len(str(cell.value or "")) for cell in col), default=10)
+                ws.column_dimensions[col[0].column_letter].width = min(max_len + 2, 40)
+
+            wb.save(path)
+            QMessageBox.information(self, "Export", f"Saved:\n{path}")
+        except Exception as e:
+            QMessageBox.critical(self, "Export Error", str(e))

@@ -6,6 +6,7 @@ from PySide6.QtCore import Qt
 from qfluentwidgets import FluentWindow, NavigationItemPosition, FluentIcon, setTheme, Theme, InfoBar, InfoBarPosition
 
 from src.core.config import ConfigManager
+from src.core.models import MatchStatus
 from src.core.matcher import reconcile
 from src.archive.archive_manager import ArchiveManager
 from src.archive.history_lookup import lookup_flagged_records
@@ -28,7 +29,7 @@ class MainWindow(FluentWindow):
         self._result_saved = True
         self._prev_page = None
 
-        self.setWindowTitle("Payment Reconciler")
+        self.setWindowTitle("Payment Reconciler v4")
         self.setMinimumSize(1400, 860)
         setTheme(Theme.DARK)
 
@@ -85,11 +86,14 @@ class MainWindow(FluentWindow):
         self.stackedWidget.setCurrentWidget(self.reconcile_iface)
         self.navigationInterface.setCurrentItem(self.reconcile_iface.objectName())
 
-        matched = sum(1 for r in results if r.is_ok)
+        matched = sum(1 for r in results if r.status == MatchStatus.MATCHED)
+        resolved = sum(1 for r in results if r.status == MatchStatus.RESOLVED_FROM_ARCHIVE)
         total = len(results)
-        InfoBar.success(
-            title="Reconciliation Complete",
-            content=f"{matched}/{total} matched — {display_name}",
+        open_items = total - matched - resolved
+        info_method = InfoBar.success if open_items == 0 else InfoBar.warning
+        info_method(
+            title="Reconciliation Complete" if open_items == 0 else "Review Needed",
+            content=f"{matched} matched, {resolved} resolved from archive, {total} total — {display_name}",
             orient=Qt.Horizontal,
             isClosable=True,
             position=InfoBarPosition.TOP_RIGHT,
@@ -122,10 +126,17 @@ class MainWindow(FluentWindow):
             am.save_daily(value_date, label, self._current_results)
             self._result_saved = True
 
-            matched = sum(1 for r in self._current_results if r.is_ok)
+            matched = sum(1 for r in self._current_results if r.status == MatchStatus.MATCHED)
+            resolved = sum(
+                1 for r in self._current_results
+                if r.status == MatchStatus.RESOLVED_FROM_ARCHIVE
+            )
             total = len(self._current_results)
             try:
-                am.log_action("ARCHIVE_SAVED", label, value_date, f"{matched}/{total} matched")
+                am.log_action(
+                    "ARCHIVE_SAVED", label, value_date,
+                    f"{matched} matched, {resolved} resolved, {total} total"
+                )
             except Exception:
                 pass
 
