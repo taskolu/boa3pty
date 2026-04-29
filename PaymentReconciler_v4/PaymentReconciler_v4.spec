@@ -32,7 +32,7 @@ exe = EXE(
     a.scripts,
     [],
     exclude_binaries=True,
-    name="PaymentReconciler_v4",
+    name="Exotic Payment Reconciler",
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
@@ -53,5 +53,5 @@ coll = COLLECT(
     strip=False,
     upx=True,
     upx_exclude=[],
-    name="PaymentReconciler_v4",
+    name="Exotic Payment Reconciler",
 )

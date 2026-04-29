@@ -12,5 +12,5 @@ python -m pip install -r requirements_v2.txt
 python -m PyInstaller --clean --noconfirm PaymentReconciler_v4.spec
 
 echo.
-echo Build complete: dist\PaymentReconciler_v4\PaymentReconciler_v4.exe
+echo Build complete: dist\Exotic Payment Reconciler\Exotic Payment Reconciler.exe
 pause

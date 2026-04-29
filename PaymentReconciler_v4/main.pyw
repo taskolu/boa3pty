@@ -17,7 +17,7 @@ def resource_path(*parts):
 
 def main():
     app = QApplication(sys.argv)
-    app.setApplicationName("Payment Reconciler v4")
+    app.setApplicationName("Exotic Payment Reconciler")
     app_dir = get_app_dir()
     icon_path = resource_path("assets", "app_icon.ico")
     if os.path.exists(icon_path):

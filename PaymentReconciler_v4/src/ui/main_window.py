@@ -31,7 +31,7 @@ class MainWindow(FluentWindow):
         self._result_saved = True
         self._prev_page = None
 
-        self.setWindowTitle("Payment Reconciler v4")
+        self.setWindowTitle("Exotic Payment Reconciler")
         self.setMinimumSize(1400, 860)
         base = getattr(
             sys, "_MEIPASS",
