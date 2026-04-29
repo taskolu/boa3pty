@@ -189,22 +189,29 @@ class ReconcileInterface(QWidget):
         self.txt_search.setPlaceholderText("Conf# / currency / client account…")
         self.txt_search.textChanged.connect(self._apply_filter)
         filter_row.addWidget(self.txt_search, 1)
+        root.addLayout(filter_row)
 
-        self.btn_accept = PushButton("Accept / Add Note", self)
+        action_row = QHBoxLayout()
+        self.lbl_suggestion_info = BodyLabel("")
+        self.lbl_suggestion_info.setStyleSheet("color: #ffd54f; font-weight: bold;")
+        action_row.addWidget(self.lbl_suggestion_info)
+        action_row.addStretch()
+
+        self.btn_accept = PushButton("Accept Note", self)
         self.btn_accept.setEnabled(False)
         self.btn_accept.clicked.connect(self._accept_selected)
-        filter_row.addWidget(self.btn_accept)
+        action_row.addWidget(self.btn_accept)
 
-        self.btn_accept_match = PushButton("Accept Suggested Match", self)
+        self.btn_accept_match = PushButton("Accept Match", self)
         self.btn_accept_match.setEnabled(False)
         self.btn_accept_match.clicked.connect(self._accept_suggested_match)
-        filter_row.addWidget(self.btn_accept_match)
+        action_row.addWidget(self.btn_accept_match)
 
-        self.btn_decline_match = PushButton("Decline Suggestion", self)
+        self.btn_decline_match = PushButton("Decline Match", self)
         self.btn_decline_match.setEnabled(False)
         self.btn_decline_match.clicked.connect(self._decline_suggestion)
-        filter_row.addWidget(self.btn_decline_match)
-        root.addLayout(filter_row)
+        action_row.addWidget(self.btn_decline_match)
+        root.addLayout(action_row)
 
         # ── Section labels ────────────────────────────────────────────
         section_row = QHBoxLayout()
@@ -359,11 +366,17 @@ class ReconcileInterface(QWidget):
             conf_key = (r.gpg_record.confirmation_number if r.gpg_record
                         else r.ws_record.external_ref if r.ws_record else "")
             is_accepted = conf_key in self._accepted_confs
+            suggested_partner = self._suggested_partner_key(r)
+            is_suggested = suggested_partner is not None
 
             if is_accepted:
                 row_bg    = QColor("#0a2020")
                 key_bg    = QColor("#0a2a1a")
                 status_fg = QColor("#4dd0e1")
+            elif is_suggested:
+                row_bg    = QColor("#3a2d00")
+                key_bg    = QColor("#5a4300")
+                status_fg = QColor("#ffd54f")
             else:
                 row_bg    = _STATUS_BG.get(sv, QColor("#252525"))
                 key_bg    = QColor("#2a1e00") if sv == MatchStatus.MATCHED.value else QColor("#1e1a00")
@@ -378,7 +391,12 @@ class ReconcileInterface(QWidget):
 
             ws  = r.ws_record
             gpg = r.gpg_record
-            status_display = "✓  Accepted" if is_accepted else _STATUS_LABEL.get(sv, sv)
+            if is_accepted:
+                status_display = "✓  Accepted"
+            elif is_suggested:
+                status_display = "Possible Match"
+            else:
+                status_display = _STATUS_LABEL.get(sv, sv)
 
             row_data = [
                 (status_display,                                     row_bg, status_fg, True),
@@ -403,11 +421,15 @@ class ReconcileInterface(QWidget):
             for ci, (val, bg, fg, bold) in enumerate(row_data):
                 item = QTableWidgetItem(val)
                 item.setBackground(QBrush(bg))
+                if is_suggested and not fg:
+                    fg = QColor("#fff3bf")
                 if fg:
                     item.setForeground(QBrush(fg))
-                if bold:
+                if bold or is_suggested:
                     item.setFont(QFont("Segoe UI", 9, QFont.Bold))
                 item.setTextAlignment(Qt.AlignVCenter | Qt.AlignLeft)
+                if is_suggested:
+                    item.setToolTip("Possible match. Select this row and use Accept Match or Decline Match.")
                 self.tbl.setItem(ri, ci, item)
 
         self.tbl.resizeColumnsToContents()
@@ -531,6 +553,20 @@ class ReconcileInterface(QWidget):
                 if not str(d).startswith("Suggested match: ")
             ]
 
+    def _update_suggestion_info(self):
+        pairs = set()
+        for result in self._all_results:
+            partner_key = self._suggested_partner_key(result)
+            if partner_key:
+                pairs.add(tuple(sorted((self._record_key(result), partner_key))))
+        count = len(pairs)
+        if count:
+            self.lbl_suggestion_info.setText(
+                f"{count} possible match{'es' if count != 1 else ''} highlighted"
+            )
+        else:
+            self.lbl_suggestion_info.setText("")
+
     def _refresh_match_suggestions(self):
         self._clear_suggestion_notes()
         gpg_open = [
@@ -590,6 +626,7 @@ class ReconcileInterface(QWidget):
                 )
                 gpg_result.discrepancies.insert(0, note_for_gpg)
                 best.discrepancies.insert(0, note_for_ws)
+        self._update_suggestion_info()
 
     def _accept_suggested_match(self):
         result, _ = self._result_for_table_row(self._selected_row())
