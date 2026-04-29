@@ -62,8 +62,16 @@ def generate_payment_breakdown(
 
     # ── Sort all results: alphabetically by buy_ccy, then by conf# ───────────
     def _sort_key(r: MatchResult):
-        ccy = r.gpg_record.buy_currency if r.gpg_record else "ZZZ"
-        conf = r.gpg_record.confirmation_number if r.gpg_record else ""
+        ccy = (
+            r.gpg_record.buy_currency if r.gpg_record
+            else r.ws_record.rec_ccy if r.ws_record
+            else "ZZZ"
+        )
+        conf = (
+            r.gpg_record.confirmation_number if r.gpg_record
+            else r.ws_record.external_ref if r.ws_record
+            else ""
+        )
         return (ccy, conf)
 
     sorted_results = sorted(results, key=_sort_key)
@@ -76,15 +84,28 @@ def generate_payment_breakdown(
     for r in sorted_results:
         gpg = r.gpg_record
         wse = r.ws_record
-        if not gpg:
-            continue
+        conf = (
+            gpg.confirmation_number if gpg
+            else wse.external_ref if wse
+            else ""
+        )
+        buy_ccy = (
+            gpg.buy_currency if gpg
+            else wse.rec_ccy if wse
+            else ""
+        )
+        buy_amount = (
+            gpg.buy_amount if gpg
+            else wse.rec_amount if wse
+            else Decimal("0")
+        )
 
         row = [
-            gpg.confirmation_number,
+            conf,
             r.status.value,
-            gpg.value_date.strftime("%d %b %Y"),
-            gpg.buy_currency,
-            float(gpg.buy_amount),
+            gpg.value_date.strftime("%d %b %Y") if gpg else "",
+            buy_ccy,
+            float(buy_amount) if buy_amount else "",
             wse.value_date.strftime("%d %b %Y") if wse else "",
             wse.pay_ccy if wse else "",
             float(wse.pay_amount) if wse else "",
@@ -95,8 +116,8 @@ def generate_payment_breakdown(
         ws.append(row)
 
         # Net: buy side positive
-        if gpg.buy_currency:
-            net[gpg.buy_currency] += gpg.buy_amount
+        if buy_ccy and buy_amount:
+            net[buy_ccy] += buy_amount
         # Net: pay side negative
         if wse and wse.pay_ccy and wse.pay_amount:
             net[wse.pay_ccy] -= wse.pay_amount

@@ -702,14 +702,18 @@ class ReconcileInterface(QWidget):
         self.save_to_archive_requested.emit(d, cp)
 
     def _export_report(self):
+        qd = self.dt_archive.date()
+        d = date(qd.year(), qd.month(), qd.day())
+        cp = self.txt_archive_cp.text().strip() or self._counterparty or "UNKNOWN"
+        default_name = f"{d.isoformat()}_{cp}.xlsx"
         path, _ = QFileDialog.getSaveFileName(
-            self, "Save Report", "", "Excel Files (*.xlsx)"
+            self, "Save Report", default_name, "Excel Files (*.xlsx)"
         )
         if not path:
             return
+        if not path.lower().endswith(".xlsx"):
+            path += ".xlsx"
         try:
-            qd = self.dt_archive.date()
-            d = date(qd.year(), qd.month(), qd.day())
             generate_payment_breakdown(self._all_results, path, d)
             QMessageBox.information(self, "Export", f"Saved:\n{path}")
         except Exception as e:
