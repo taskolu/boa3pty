@@ -1,8 +1,10 @@
 from __future__ import annotations
 import os
+import sys
 from datetime import date
 from PySide6.QtWidgets import QMessageBox
 from PySide6.QtCore import Qt
+from PySide6.QtGui import QIcon
 from qfluentwidgets import FluentWindow, NavigationItemPosition, FluentIcon, setTheme, Theme, InfoBar, InfoBarPosition
 
 from src.core.config import ConfigManager
@@ -31,6 +33,13 @@ class MainWindow(FluentWindow):
 
         self.setWindowTitle("Payment Reconciler v4")
         self.setMinimumSize(1400, 860)
+        base = getattr(
+            sys, "_MEIPASS",
+            os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+        )
+        icon_path = os.path.join(base, "assets", "app_icon.ico")
+        if os.path.exists(icon_path):
+            self.setWindowIcon(QIcon(icon_path))
         setTheme(Theme.DARK)
 
         from src.ui.import_interface import ImportInterface
