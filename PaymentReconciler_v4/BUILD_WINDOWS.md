@@ -12,7 +12,7 @@ Open this `PaymentReconciler_v4` folder in VS Code on Windows.
 The finished app will be here:
 
 ```text
-dist\Exotic Payment Reconciler\Exotic Payment Reconciler.exe
+C:\Users\AbduTas\OneDrive - Convera\Desktop\asdasd\BOA3PTY WSFX\Exotic Payment Reconciler\Exotic Payment Reconciler.exe
 ```
 
 ## Manual Build
@@ -24,11 +24,11 @@ py -3 -m venv .venv
 .venv\Scripts\activate
 python -m pip install --upgrade pip
 python -m pip install -r requirements_v2.txt
-python -m PyInstaller --clean --noconfirm PaymentReconciler_v4.spec
+python -m PyInstaller --clean --noconfirm --distpath "C:\Users\AbduTas\OneDrive - Convera\Desktop\asdasd\BOA3PTY WSFX" PaymentReconciler_v4.spec
 ```
 
 ## Notes
 
 - The app icon is bundled from `assets\app_icon.ico`.
 - `config.json` is created beside the `.exe` on first launch by copying `config.default.json`.
-- Keep the whole `dist\Exotic Payment Reconciler` folder together when sharing the app.
+- Keep the whole `C:\Users\AbduTas\OneDrive - Convera\Desktop\asdasd\BOA3PTY WSFX\Exotic Payment Reconciler` folder together when sharing the app.
