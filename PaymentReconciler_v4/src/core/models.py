@@ -30,7 +30,16 @@ class GPGPayment:
 
     @property
     def has_dt06_flag(self) -> bool:
-        return self.status_code is not None and "DT06" in self.status_code
+        return self.has_status_flag("DT06")
+
+    def has_status_flag(self, code: str) -> bool:
+        needle = (code or "").strip().upper()
+        if not needle:
+            return False
+        haystack = " ".join(
+            part for part in (self.status_code, self.status_message) if part
+        ).upper()
+        return needle in haystack
 
 
 @dataclass

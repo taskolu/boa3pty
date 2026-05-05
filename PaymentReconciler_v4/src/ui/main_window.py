@@ -73,9 +73,11 @@ class MainWindow(FluentWindow):
     def _run_reconciliation(self, gpg_records, ws_entries, counterparty_name):
         archived_flags = []
         display_name = self.config.get_display_name(counterparty_name)
+        dt06_code = "DT06"
         try:
             cp = self.config.get_counterparty(counterparty_name)
             lookback = cp.get("lookback_days", 10)
+            dt06_code = cp.get("dt06_code", "DT06")
             archive_path = resolve_archive_path(self.config.archive_path)
             reference_date = _dominant_gpg_value_date(gpg_records)
             archived_flags = lookup_flagged_records(
@@ -84,7 +86,7 @@ class MainWindow(FluentWindow):
         except Exception:
             pass
 
-        results = reconcile(gpg_records, ws_entries, archived_flags)
+        results = reconcile(gpg_records, ws_entries, archived_flags, dt06_code=dt06_code)
         self._current_results = results
         self._current_counterparty = counterparty_name
         self._result_saved = False

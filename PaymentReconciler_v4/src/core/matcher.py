@@ -21,6 +21,7 @@ def reconcile(
     gpg_records: list[GPGPayment],
     ws_records: list[WSEntry],
     archived_flags: list[dict] | None = None,
+    dt06_code: str = "DT06",
 ) -> list[MatchResult]:
     """Match GPG payments against WallStreet FX entries.
 
@@ -102,7 +103,7 @@ def reconcile(
                     ))
         else:
             # Not found in WallStreet
-            if gpg.has_dt06_flag:
+            if gpg.has_status_flag(dt06_code):
                 results.append(MatchResult(
                     status=MatchStatus.FLAGGED_DT06,
                     gpg_record=gpg,
