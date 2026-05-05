@@ -115,10 +115,11 @@ def generate_payment_breakdown(
         ]
         ws.append(row)
 
-        # Net: buy side positive
-        if buy_ccy and buy_amount:
-            net[buy_ccy] += buy_amount
-        # Net: pay side negative
+        # Net totals must reflect WallStreet-settled rows only.
+        # GPG-only rows such as Missing in WS / DT06 stay in the detail table
+        # for review, but they are not yet in WS and must not affect net totals.
+        if wse and wse.rec_ccy and wse.rec_amount:
+            net[wse.rec_ccy] += wse.rec_amount
         if wse and wse.pay_ccy and wse.pay_amount:
             net[wse.pay_ccy] -= wse.pay_amount
 
