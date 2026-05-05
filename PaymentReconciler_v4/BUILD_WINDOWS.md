@@ -24,7 +24,7 @@ py -3 -m venv .venv
 .venv\Scripts\activate
 python -m pip install --upgrade pip
 python -m pip install -r requirements_v2.txt
-python -m PyInstaller --clean --noconfirm --distpath "C:\Users\AbduTas\OneDrive - Convera\Desktop\asdasd\BOA3PTY WSFX" PaymentReconciler_v4.spec
+python -m PyInstaller --clean --noconfirm --workpath "%TEMP%\PaymentReconciler_v4_build" --distpath "C:\Users\AbduTas\OneDrive - Convera\Desktop\asdasd\BOA3PTY WSFX" PaymentReconciler_v4.spec
 ```
 
 ## Notes
@@ -32,3 +32,4 @@ python -m PyInstaller --clean --noconfirm --distpath "C:\Users\AbduTas\OneDrive 
 - The app icon is bundled from `assets\app_icon.ico`.
 - `config.json` is created beside the `.exe` on first launch by copying `config.default.json`.
 - Keep the whole `C:\Users\AbduTas\OneDrive - Convera\Desktop\asdasd\BOA3PTY WSFX\Exotic Payment Reconciler` folder together when sharing the app.
+- If the build says access is denied, close the existing app and any Excel files from that folder, then build again.
