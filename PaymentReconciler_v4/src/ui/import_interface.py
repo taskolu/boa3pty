@@ -363,7 +363,7 @@ class ImportInterface(QWidget):
             self.tbl_ws.setRowCount(0)
             for i, e in enumerate(entries[:200]):
                 self.tbl_ws.insertRow(i)
-                self.tbl_ws.setItem(i, 0, _item(e.external_ref))
+                self.tbl_ws.setItem(i, 0, _item(e.external_ref or e.wallstreet_ref))
                 self.tbl_ws.setItem(i, 1, _item(e.value_date.isoformat()))
                 self.tbl_ws.setItem(i, 2, _item(e.pay_ccy))
                 self.tbl_ws.setItem(i, 3, _item(str(e.pay_amount)))

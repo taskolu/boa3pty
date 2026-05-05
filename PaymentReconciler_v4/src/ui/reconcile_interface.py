@@ -349,7 +349,7 @@ class ReconcileInterface(QWidget):
                     r.gpg_record.confirmation_number if r.gpg_record else "",
                     r.gpg_record.buy_currency if r.gpg_record else "",
                     str(r.gpg_record.buy_amount) if r.gpg_record else "",
-                    r.ws_record.external_ref if r.ws_record else "",
+                    self._ws_display_key(r.ws_record) if r.ws_record else "",
                     raw.get("client_account_number", ""),
                     raw.get("client_name", ""),
                 ]).lower()
@@ -366,7 +366,7 @@ class ReconcileInterface(QWidget):
         for ri, r in enumerate(results):
             sv = r.status.value
             conf_key = (r.gpg_record.confirmation_number if r.gpg_record
-                        else r.ws_record.external_ref if r.ws_record else "")
+                        else self._ws_display_key(r.ws_record) if r.ws_record else "")
             is_accepted = conf_key in self._accepted_confs
             suggested_partner = self._suggested_partner_key(r)
             is_suggested = suggested_partner is not None
@@ -385,7 +385,7 @@ class ReconcileInterface(QWidget):
                 status_fg = _STATUS_FG.get(sv, QColor("white"))
 
             conf = (r.gpg_record.confirmation_number if r.gpg_record
-                    else r.ws_record.external_ref if r.ws_record else "")
+                    else self._ws_display_key(r.ws_record) if r.ws_record else "")
             raw = r.gpg_record.raw_row if r.gpg_record else {}
             arrival = raw.get("Arrival_date_in_UTC", raw.get("arrival_date", ""))
             arrival = arrival.split(" ")[0] if arrival else ""
@@ -477,8 +477,11 @@ class ReconcileInterface(QWidget):
         if result.gpg_record:
             return result.gpg_record.confirmation_number
         if result.ws_record:
-            return result.ws_record.external_ref
+            return self._ws_display_key(result.ws_record)
         return ""
+
+    def _ws_display_key(self, ws) -> str:
+        return ws.external_ref or ws.wallstreet_ref or ""
 
     def _result_for_table_row(self, row: int):
         if row < 0:
@@ -639,8 +642,9 @@ class ReconcileInterface(QWidget):
             if best:
                 used_ws.add(self._record_key(best))
                 ws = best.ws_record
+                ws_key = self._ws_display_key(ws)
                 note_for_gpg = (
-                    f"Suggested match: {ws.external_ref} "
+                    f"Suggested match: {ws_key} "
                     f"({ws.rec_ccy} {ws.rec_amount}, WS {ws.value_date.strftime('%d %b %Y')})"
                 )
                 note_for_ws = (
@@ -683,7 +687,7 @@ class ReconcileInterface(QWidget):
         gpg_result.status = MatchStatus.MATCHED
         gpg_result.ws_record = ws
         gpg_result.discrepancies = [
-            f"✓ ACCEPTED MATCH: paired with WS {ws.external_ref} / {ws.wallstreet_ref}",
+            f"✓ ACCEPTED MATCH: paired with WS {self._ws_display_key(ws)} / {ws.wallstreet_ref}",
             f"External ref differs: GPG={gpg.confirmation_number}, WS={ws.external_ref}",
         ]
         if ws.value_date != gpg.value_date:

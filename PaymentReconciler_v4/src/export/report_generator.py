@@ -69,7 +69,7 @@ def generate_payment_breakdown(
         )
         conf = (
             r.gpg_record.confirmation_number if r.gpg_record
-            else r.ws_record.external_ref if r.ws_record
+            else _ws_display_key(r.ws_record) if r.ws_record
             else ""
         )
         return (ccy, conf)
@@ -86,7 +86,7 @@ def generate_payment_breakdown(
         wse = r.ws_record
         conf = (
             gpg.confirmation_number if gpg
-            else wse.external_ref if wse
+            else _ws_display_key(wse) if wse
             else ""
         )
         buy_ccy = (
@@ -175,3 +175,7 @@ def generate_payment_breakdown(
     ws.freeze_panes = ws.cell(row=HDR_ROW + 1, column=1)
 
     wb.save(output_path)
+
+
+def _ws_display_key(wse) -> str:
+    return wse.external_ref or wse.wallstreet_ref or ""

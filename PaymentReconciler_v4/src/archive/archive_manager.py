@@ -67,7 +67,7 @@ class ArchiveManager:
             ws_results.append([
                 r.status.value,
                 (gpg.confirmation_number if gpg
-                 else ws.external_ref if ws else ""),
+                 else _ws_display_key(ws) if ws else ""),
                 gpg.buy_currency if gpg else "",
                 str(gpg.buy_amount) if gpg else "",
                 gpg.value_date.isoformat() if gpg else "",
@@ -255,3 +255,7 @@ class ArchiveManager:
                 json.dump(list(existing), f, indent=2)
         except Exception:
             pass
+
+
+def _ws_display_key(ws) -> str:
+    return ws.external_ref or ws.wallstreet_ref or ""

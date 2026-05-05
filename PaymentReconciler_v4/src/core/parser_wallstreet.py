@@ -114,7 +114,7 @@ def parse_wallstreet_paste(
     ignored_currencies: list of rec_ccy values (e.g. ["JPY", "INR"]) to skip.
 
     Returns (list of WSEntry, detected counterparty name).
-    Deduplicates rows by external_ref (Ext Deal #).
+    Deduplicates rows by external_ref (Ext Deal #), or by Deal # when Ext Deal # is blank.
     """
     _ignored = {c.upper() for c in (ignored_currencies or [])}
     mapping = {**DEFAULT_WS_COLUMNS, **(col_map_override or {})}
@@ -203,23 +203,24 @@ def parse_wallstreet_paste(
                 prev_cells[-1] = prev_cells[-1].strip() + " " + cont_cells[0].strip()
                 merged_data_lines[-1] = "\t".join(prev_cells + cont_cells[1:])
 
-    seen_external_refs: set[str] = set()
+    seen_ws_keys: set[str] = set()
     entries: list[WSEntry] = []
     detected_counterparty: Optional[str] = None
 
-    for line in merged_data_lines:
+    for line_idx, line in enumerate(merged_data_lines):
         cells = line.split("\t")
         if len(cells) < 3:
             continue
 
         ext_ref = get(cells, "external_ref")
-        if not ext_ref:
-            continue
 
-        # Deduplicate: WallStreet pastes often contain sorted duplicates
-        if ext_ref in seen_external_refs:
+        # Deduplicate: WallStreet pastes often contain sorted duplicates.
+        # Rows with blank Ext Deal # still need to be kept as WS-only rows.
+        wallstreet_ref = get(cells, "wallstreet_ref")
+        dedupe_key = ext_ref or f"WS:{wallstreet_ref or line_idx}"
+        if dedupe_key in seen_ws_keys:
             continue
-        seen_external_refs.add(ext_ref)
+        seen_ws_keys.add(dedupe_key)
 
         deal_type = get(cells, "deal_type")
         if deal_type and deal_type.upper() not in ("FX", "SPOT", "FORWARD", ""):
@@ -249,7 +250,7 @@ def parse_wallstreet_paste(
             rec_amount=_decimal(get(cells, "rec_amount")),
             rate=_decimal(get(cells, "rate")),
             trader=get(cells, "trader"),
-            wallstreet_ref=get(cells, "wallstreet_ref"),
+            wallstreet_ref=wallstreet_ref,
             external_ref=ext_ref,
             deal_type=deal_type or "FX",
         )

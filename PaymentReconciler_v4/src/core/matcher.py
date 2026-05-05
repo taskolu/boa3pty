@@ -34,15 +34,15 @@ def reconcile(
                     'status' keys from archive lookback (DT06 resolution).
     """
     tolerances = _normalize_amount_tolerances(amount_tolerances)
-    ws_by_ref = {e.external_ref: e for e in ws_records}
-    matched_ws_refs: set[str] = set()
+    ws_by_ref = {e.external_ref: e for e in ws_records if e.external_ref}
+    matched_ws_ids: set[int] = set()
     results: list[MatchResult] = []
 
     for gpg in gpg_records:
         ws = ws_by_ref.get(gpg.confirmation_number)
 
         if ws is not None:
-            matched_ws_refs.add(gpg.confirmation_number)
+            matched_ws_ids.add(id(ws))
 
             # Check currency first
             if gpg.buy_currency != ws.rec_ccy:
@@ -132,7 +132,7 @@ def reconcile(
 
     # Find WS entries with no GPG match
     for ws in ws_records:
-        if ws.external_ref not in matched_ws_refs:
+        if id(ws) not in matched_ws_ids:
             if _check_archive(ws.external_ref, archived_flags):
                 source = _get_archive_source(ws.external_ref, archived_flags)
                 results.append(MatchResult(
