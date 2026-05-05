@@ -17,6 +17,11 @@
       "date_format": "%Y-%m-%d",
       "dt06_code": "DT06",
       "lookback_days": 10,
+      "amount_tolerances": {
+        "IQD": "1",
+        "CLP": "1",
+        "JPY": "1"
+      },
       "auto_resolve_dt06": false,
       "rules": ["dt06_date_change"],
       "wallstreet_column_mapping": {}

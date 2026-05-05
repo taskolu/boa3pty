@@ -264,6 +264,12 @@ class CounterpartyDialog(QDialog):
         self.spn_lookback.setValue(config.get("lookback_days", 10))
         form.addRow("Lookback Days:", self.spn_lookback)
 
+        self.txt_amount_tolerances = _LE(
+            self._format_amount_tolerances(config.get("amount_tolerances", {}))
+        )
+        self.txt_amount_tolerances.setPlaceholderText("e.g. IQD=1, CLP=1, JPY=1")
+        form.addRow("Amount Tolerances:", self.txt_amount_tolerances)
+
         self.chk_auto = QCheckBox("Auto-resolve DT06", self)
         self.chk_auto.setChecked(config.get("auto_resolve_dt06", False))
         form.addRow("", self.chk_auto)
@@ -345,8 +351,31 @@ class CounterpartyDialog(QDialog):
                 "date_format":                    self.cmb_date_format.currentText(),
                 "dt06_code":                      self.txt_dt06.text().strip(),
                 "lookback_days":                  self.spn_lookback.value(),
+                "amount_tolerances":              self._parse_amount_tolerances(
+                    self.txt_amount_tolerances.text()
+                ),
                 "auto_resolve_dt06":              self.chk_auto.isChecked(),
                 "rules":                          ["dt06_date_change"],
                 "wallstreet_column_mapping":      ws_map,
             }
         }
+
+    def _format_amount_tolerances(self, tolerances: dict) -> str:
+        return ", ".join(
+            f"{str(ccy).upper()}={value}" for ccy, value in sorted((tolerances or {}).items())
+        )
+
+    def _parse_amount_tolerances(self, raw: str) -> dict:
+        parsed = {}
+        for part in raw.split(","):
+            text = part.strip()
+            if not text:
+                continue
+            if "=" not in text:
+                continue
+            ccy, value = text.split("=", 1)
+            ccy = ccy.strip().upper()
+            value = value.strip()
+            if ccy and value:
+                parsed[ccy] = value
+        return parsed

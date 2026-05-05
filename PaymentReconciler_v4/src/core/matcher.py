@@ -22,6 +22,7 @@ def reconcile(
     ws_records: list[WSEntry],
     archived_flags: list[dict] | None = None,
     dt06_code: str = "DT06",
+    amount_tolerances: dict | None = None,
 ) -> list[MatchResult]:
     """Match GPG payments against WallStreet FX entries.
 
@@ -32,6 +33,7 @@ def reconcile(
     archived_flags: optional list of dicts with 'confirmation_number' and
                     'status' keys from archive lookback (DT06 resolution).
     """
+    tolerances = _normalize_amount_tolerances(amount_tolerances)
     ws_by_ref = {e.external_ref: e for e in ws_records}
     matched_ws_refs: set[str] = set()
     results: list[MatchResult] = []
@@ -52,26 +54,29 @@ def reconcile(
                         f"currency: GPG={gpg.buy_currency}, WS={ws.rec_ccy}"
                     ],
                 ))
-            # Then check amount (0.01 tolerance)
-            elif abs(gpg.buy_amount - ws.rec_amount) > _AMOUNT_TOLERANCE:
-                results.append(MatchResult(
-                    status=MatchStatus.AMOUNT_MISMATCH,
-                    gpg_record=gpg,
-                    ws_record=ws,
-                    discrepancies=[
-                        f"amount: GPG={gpg.buy_amount}, WS={ws.rec_amount}"
-                    ],
-                ))
             else:
+                tolerance = _amount_tolerance_for(gpg.buy_currency, tolerances)
+                diff = abs(gpg.buy_amount - ws.rec_amount)
+                if diff > tolerance:
+                    results.append(MatchResult(
+                        status=MatchStatus.AMOUNT_MISMATCH,
+                        gpg_record=gpg,
+                        ws_record=ws,
+                        discrepancies=[
+                            f"amount: GPG={gpg.buy_amount}, WS={ws.rec_amount}, "
+                            f"tolerance={tolerance}"
+                        ],
+                    ))
+                    continue
+
                 # Value date check:
                 # WS date > GPG date = bank amended the value date forward (normal, note it)
                 # WS date < GPG date = should never happen (real data error)
                 # WS date == GPG date = perfect match
                 discrepancies = []
-                diff = abs(gpg.buy_amount - ws.rec_amount)
                 if diff > Decimal("0"):
                     discrepancies.append(
-                        f"Amount diff {diff} within 0.01 tolerance"
+                        f"Amount diff {diff} within {tolerance} tolerance"
                     )
                 if ws.value_date > gpg.value_date:
                     discrepancies.append(
@@ -100,6 +105,7 @@ def reconcile(
                         status=MatchStatus.MATCHED,
                         gpg_record=gpg,
                         ws_record=ws,
+                        discrepancies=discrepancies,
                     ))
         else:
             # Not found in WallStreet
@@ -148,6 +154,23 @@ def reconcile(
     # Sort: problems first, matched last
     results.sort(key=lambda r: _STATUS_PRIORITY.get(r.status, 99))
     return results
+
+
+def _normalize_amount_tolerances(raw: dict | None) -> dict[str, Decimal]:
+    tolerances: dict[str, Decimal] = {}
+    for ccy, value in (raw or {}).items():
+        code = str(ccy).strip().upper()
+        if not code:
+            continue
+        try:
+            tolerances[code] = Decimal(str(value).strip())
+        except Exception:
+            continue
+    return tolerances
+
+
+def _amount_tolerance_for(currency: str, tolerances: dict[str, Decimal]) -> Decimal:
+    return tolerances.get((currency or "").strip().upper(), _AMOUNT_TOLERANCE)
 
 
 def _check_archive(conf_number: str, flags: list[dict] | None) -> bool:

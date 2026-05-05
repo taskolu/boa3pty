@@ -144,6 +144,7 @@ class ReconcileInterface(QWidget):
         self._counterparty = None
         self._accepted_confs: set[str] = set()
         self._declined_suggestions: set[tuple[str, str]] = set()
+        self._amount_tolerances = {}
         self._init_ui()
 
     def _init_ui(self):
@@ -299,7 +300,7 @@ class ReconcileInterface(QWidget):
 
     # ── Data loading ───────────────────────────────────────────────
 
-    def load_results(self, results, counterparty_name: str):
+    def load_results(self, results, counterparty_name: str, amount_tolerances: dict | None = None):
         def _sort_key(r):
             priority = _STATUS_PRIORITY.get(r.status.value, 99)
             ccy = r.ws_record.rec_ccy if r.ws_record else ""
@@ -308,6 +309,7 @@ class ReconcileInterface(QWidget):
 
         self._all_results = sorted(results, key=_sort_key)
         self._counterparty = counterparty_name
+        self._amount_tolerances = self._normalize_amount_tolerances(amount_tolerances)
         self._accepted_confs = set()
         self._declined_suggestions = set()
         self.btn_save.setEnabled(True)
@@ -530,9 +532,30 @@ class ReconcileInterface(QWidget):
             self._accepted_confs.add(conf)
             self._apply_filter()
 
-    def _amount_close(self, left, right) -> bool:
+    def _normalize_amount_tolerances(self, raw: dict | None) -> dict[str, Decimal]:
+        tolerances = {}
+        for ccy, value in (raw or {}).items():
+            code = str(ccy).strip().upper()
+            if not code:
+                continue
+            try:
+                tolerances[code] = Decimal(str(value).strip())
+            except Exception:
+                continue
+        return tolerances
+
+    def _amount_tolerance_for(self, currency: str) -> Decimal:
+        return self._amount_tolerances.get(
+            (currency or "").strip().upper(),
+            Decimal("0.01"),
+        )
+
+    def _amount_close(self, left, right, currency: str = "") -> bool:
         try:
-            return abs(Decimal(str(left)) - Decimal(str(right))) <= Decimal("0.01")
+            return (
+                abs(Decimal(str(left)) - Decimal(str(right)))
+                <= self._amount_tolerance_for(currency)
+            )
         except Exception:
             return False
 
@@ -594,7 +617,7 @@ class ReconcileInterface(QWidget):
                 ws = ws_result.ws_record
                 if gpg.buy_currency != ws.rec_ccy:
                     continue
-                if not self._amount_close(gpg.buy_amount, ws.rec_amount):
+                if not self._amount_close(gpg.buy_amount, ws.rec_amount, gpg.buy_currency):
                     continue
 
                 days = (ws.value_date - gpg.value_date).days
