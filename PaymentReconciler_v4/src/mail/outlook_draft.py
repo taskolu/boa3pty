@@ -27,11 +27,13 @@ def create_outlook_draft(
     mail.To = to
     mail.CC = cc
     if from_address:
-        _set_sender(mail, outlook, from_address)
+        _set_sender(mail, from_address)
 
     # Match the working VBA pattern: display first so Outlook injects the
     # profile signature, then prepend our generated body to that signature.
     mail.Display()
+    if from_address:
+        _set_sender(mail, from_address)
 
     if is_html:
         signature_html = mail.HTMLBody or _load_default_signature_html()
@@ -41,26 +43,18 @@ def create_outlook_draft(
         mail.Body = body.rstrip() + "\n\n" + signature_text
 
     mail.Attachments.Add(attachment_path)
+    if from_address:
+        _set_sender(mail, from_address)
     return mail
 
 
-def _set_sender(mail, outlook, from_address: str):
-    wanted = from_address.strip().lower()
+def _set_sender(mail, from_address: str):
+    wanted = from_address.strip()
     if not wanted:
         return
 
     try:
-        for account in outlook.Session.Accounts:
-            smtp = str(getattr(account, "SmtpAddress", "") or "").lower()
-            if smtp == wanted:
-                mail.SendUsingAccount = account
-                return
-    except Exception:
-        pass
-
-    # Shared mailboxes often appear as "send on behalf of" rather than a full account.
-    try:
-        mail.SentOnBehalfOfName = from_address
+        mail.SentOnBehalfOfName = wanted
     except Exception:
         pass
 
