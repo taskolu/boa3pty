@@ -272,6 +272,24 @@ class CounterpartyDialog(QDialog):
         self.txt_amount_tolerances.setPlaceholderText("e.g. IQD=1, CLP=1, JPY=1")
         form.addRow("Amount Tolerances:", self.txt_amount_tolerances)
 
+        self.txt_email_to = _LE(config.get("email_to", "paymentsrelease@convera.com"))
+        form.addRow("Email To:", self.txt_email_to)
+
+        self.txt_email_cc = _LE(config.get(
+            "email_cc",
+            "treasuryconfirms@convera.com; bankreconaccounting@convera.com; jaunado@convera.com"
+        ))
+        form.addRow("Email CC:", self.txt_email_cc)
+
+        self.txt_email_subject = _LE(config.get(
+            "email_subject",
+            "Payment Breakdown - {counterparty} - {value_date}"
+        ))
+        form.addRow("Email Subject:", self.txt_email_subject)
+
+        self.txt_email_opening = _LE(config.get("email_opening", "Hi Team,"))
+        form.addRow("Email Opening:", self.txt_email_opening)
+
         self.chk_auto = QCheckBox("Auto-resolve DT06", self)
         self.chk_auto.setChecked(config.get("auto_resolve_dt06", False))
         form.addRow("", self.chk_auto)
@@ -357,6 +375,10 @@ class CounterpartyDialog(QDialog):
                 "amount_tolerances":              self._parse_amount_tolerances(
                     self.txt_amount_tolerances.text()
                 ),
+                "email_to":                       self.txt_email_to.text().strip(),
+                "email_cc":                       self.txt_email_cc.text().strip(),
+                "email_subject":                  self.txt_email_subject.text().strip(),
+                "email_opening":                  self.txt_email_opening.text().strip(),
                 "auto_resolve_dt06":              self.chk_auto.isChecked(),
                 "rules":                          ["dt06_date_change"],
                 "wallstreet_column_mapping":      ws_map,

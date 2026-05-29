@@ -10,7 +10,7 @@ from openpyxl import load_workbook
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from src.core.models import GPGPayment, MatchResult, MatchStatus, WSEntry
-from src.export.report_generator import generate_payment_breakdown
+from src.export.report_generator import format_net_figures, generate_payment_breakdown
 
 
 def gpg(conf, amount="1000.00"):
@@ -64,6 +64,18 @@ class ReportGeneratorTests(unittest.TestCase):
 
         self.assertEqual(totals["AZN"], Decimal("4439"))
         self.assertEqual(totals["USD"], Decimal("-2667.35"))
+
+    def test_format_net_figures_uses_same_net_totals(self):
+        results = [
+            MatchResult(MatchStatus.UNMATCHED_GPG, gpg("MISSING", "1000.00"), None),
+            MatchResult(MatchStatus.MATCHED, gpg("MATCHED", "4439.00"), ws("MATCHED")),
+        ]
+
+        body_text = format_net_figures(results)
+
+        self.assertIn("AZN    4,439.00", body_text)
+        self.assertIn("USD    -2,667.35", body_text)
+        self.assertNotIn("5,439.00", body_text)
 
 
 if __name__ == "__main__":

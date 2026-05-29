@@ -15,6 +15,29 @@ _POS_FONT = Font(bold=True, color="375623")   # dark green
 _NEG_FONT = Font(bold=True, color="9C0006")   # dark red
 
 
+def calculate_net_totals(results: list[MatchResult]) -> dict[str, Decimal]:
+    net: dict[str, Decimal] = defaultdict(Decimal)
+    for r in results:
+        wse = r.ws_record
+        if wse and wse.rec_ccy and wse.rec_amount:
+            net[wse.rec_ccy] += wse.rec_amount
+        if wse and wse.pay_ccy and wse.pay_amount:
+            net[wse.pay_ccy] -= wse.pay_amount
+    return dict(net)
+
+
+def format_net_figures(results: list[MatchResult]) -> str:
+    net = calculate_net_totals(results)
+    positives = {ccy: amt for ccy, amt in net.items() if amt >= 0}
+    negatives = {ccy: amt for ccy, amt in net.items() if amt < 0}
+    lines = []
+    for ccy in sorted(positives):
+        lines.append(f"{ccy:<6} {positives[ccy]:,.2f}")
+    for ccy in sorted(negatives):
+        lines.append(f"{ccy:<6} {negatives[ccy]:,.2f}")
+    return "\n".join(lines)
+
+
 def generate_payment_breakdown(
     results: list[MatchResult],
     output_path: str,
@@ -77,8 +100,7 @@ def generate_payment_breakdown(
     sorted_results = sorted(results, key=_sort_key)
 
     # ── Fill rows ─────────────────────────────────────────────────────────────
-    # Net accumulator: ccy → Decimal (buy side positive, pay side negative)
-    net: dict[str, Decimal] = defaultdict(Decimal)
+    net = calculate_net_totals(sorted_results)
 
     data_start_row = HDR_ROW + 1
     for r in sorted_results:
@@ -114,14 +136,6 @@ def generate_payment_breakdown(
             wse.external_ref if wse else "",
         ]
         ws.append(row)
-
-        # Net totals must reflect WallStreet-settled rows only.
-        # GPG-only rows such as Missing in WS / DT06 stay in the detail table
-        # for review, but they are not yet in WS and must not affect net totals.
-        if wse and wse.rec_ccy and wse.rec_amount:
-            net[wse.rec_ccy] += wse.rec_amount
-        if wse and wse.pay_ccy and wse.pay_amount:
-            net[wse.pay_ccy] -= wse.pay_amount
 
     data_end_row = ws.max_row
 

@@ -23,6 +23,10 @@
         "CLP": "1",
         "JPY": "1"
       },
+      "email_to": "paymentsrelease@convera.com",
+      "email_cc": "treasuryconfirms@convera.com; bankreconaccounting@convera.com; jaunado@convera.com",
+      "email_subject": "Payment Breakdown - {counterparty} - {value_date}",
+      "email_opening": "Hi Team,",
       "auto_resolve_dt06": false,
       "rules": ["dt06_date_change"],
       "wallstreet_column_mapping": {}

@@ -1,4 +1,7 @@
 from __future__ import annotations
+import os
+import re
+import tempfile
 from datetime import date
 from decimal import Decimal
 
@@ -16,7 +19,8 @@ from qfluentwidgets import (
 )
 
 from src.core.models import MatchStatus
-from src.export.report_generator import generate_payment_breakdown
+from src.export.report_generator import generate_payment_breakdown, format_net_figures
+from src.mail.outlook_draft import create_outlook_draft
 
 
 def _fmt_rate(v) -> str:
@@ -145,6 +149,7 @@ class ReconcileInterface(QWidget):
         self._accepted_confs: set[str] = set()
         self._declined_suggestions: set[tuple[str, str]] = set()
         self._amount_tolerances = {}
+        self._email_settings = {}
         self._init_ui()
 
     def _init_ui(self):
@@ -279,6 +284,11 @@ class ReconcileInterface(QWidget):
         self.btn_export.clicked.connect(self._export_report)
         bottom_lay.addWidget(self.btn_export)
 
+        self.btn_draft_email = PushButton("Draft Email", self)
+        self.btn_draft_email.setEnabled(False)
+        self.btn_draft_email.clicked.connect(self._draft_email)
+        bottom_lay.addWidget(self.btn_draft_email)
+
         root.addWidget(bottom_card)
 
     def _style_header(self):
@@ -300,7 +310,13 @@ class ReconcileInterface(QWidget):
 
     # ── Data loading ───────────────────────────────────────────────
 
-    def load_results(self, results, counterparty_name: str, amount_tolerances: dict | None = None):
+    def load_results(
+        self,
+        results,
+        counterparty_name: str,
+        amount_tolerances: dict | None = None,
+        email_settings: dict | None = None,
+    ):
         def _sort_key(r):
             priority = _STATUS_PRIORITY.get(r.status.value, 99)
             ccy = r.ws_record.rec_ccy if r.ws_record else ""
@@ -310,10 +326,12 @@ class ReconcileInterface(QWidget):
         self._all_results = sorted(results, key=_sort_key)
         self._counterparty = counterparty_name
         self._amount_tolerances = self._normalize_amount_tolerances(amount_tolerances)
+        self._email_settings = dict(email_settings or {})
         self._accepted_confs = set()
         self._declined_suggestions = set()
         self.btn_save.setEnabled(True)
         self.btn_export.setEnabled(True)
+        self.btn_draft_email.setEnabled(True)
         self._refresh_match_suggestions()
 
         dates = [r.gpg_record.value_date for r in results if r.gpg_record]
@@ -745,3 +763,46 @@ class ReconcileInterface(QWidget):
             QMessageBox.information(self, "Export", f"Saved:\n{path}")
         except Exception as e:
             QMessageBox.critical(self, "Export Error", str(e))
+
+    def _draft_email(self):
+        qd = self.dt_archive.date()
+        d = date(qd.year(), qd.month(), qd.day())
+        cp = self.txt_archive_cp.text().strip() or self._counterparty or "UNKNOWN"
+        try:
+            report_path = self._create_temp_report_path(d, cp)
+            generate_payment_breakdown(self._all_results, report_path, d)
+
+            net_figures = format_net_figures(self._all_results) or "(no WallStreet net figures)"
+            opening = self._email_settings.get("email_opening") or "Hi Team,"
+            subject_template = (
+                self._email_settings.get("email_subject")
+                or "Payment Breakdown - {counterparty} - {value_date}"
+            )
+            subject = subject_template.format(
+                counterparty=cp,
+                value_date=d.strftime("%d %b %Y"),
+                value_date_iso=d.isoformat(),
+            )
+            body = (
+                f"{opening}\n\n"
+                f"Net figures:\n\n"
+                f"{net_figures}\n\n"
+                f"Regards,"
+            )
+            create_outlook_draft(
+                to=self._email_settings.get("email_to", ""),
+                cc=self._email_settings.get("email_cc", ""),
+                subject=subject,
+                body=body,
+                attachment_path=report_path,
+            )
+            QMessageBox.information(self, "Draft Email", "Outlook draft created.")
+        except Exception as e:
+            QMessageBox.critical(self, "Draft Email Error", str(e))
+
+    def _create_temp_report_path(self, value_date: date, counterparty: str) -> str:
+        safe_cp = re.sub(r"[^A-Za-z0-9_. -]+", "_", counterparty).strip() or "counterparty"
+        filename = f"{value_date.isoformat()}_{safe_cp}.xlsx"
+        folder = os.path.join(tempfile.gettempdir(), "ExoticPaymentReconciler")
+        os.makedirs(folder, exist_ok=True)
+        return os.path.join(folder, filename)

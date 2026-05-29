@@ -101,7 +101,17 @@ class MainWindow(FluentWindow):
         self._current_counterparty = counterparty_name
         self._result_saved = False
 
-        self.reconcile_iface.load_results(results, display_name, amount_tolerances)
+        email_settings = {
+            key: cp.get(key, "") for key in (
+                "email_to", "email_cc", "email_subject", "email_opening"
+            )
+        }
+        self.reconcile_iface.load_results(
+            results,
+            display_name,
+            amount_tolerances,
+            email_settings,
+        )
 
         # Switch to reconcile page
         self.stackedWidget.setCurrentWidget(self.reconcile_iface)
