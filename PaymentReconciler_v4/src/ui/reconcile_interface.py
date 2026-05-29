@@ -773,7 +773,6 @@ class ReconcileInterface(QWidget):
             generate_payment_breakdown(self._all_results, report_path, d)
 
             net_figures_html = format_net_figures_html(self._all_results)
-            opening = self._email_settings.get("email_opening", "").strip()
             subject_template = (
                 self._email_settings.get("email_subject")
                 or "Payment Breakdown - {counterparty} - {value_date}"
@@ -783,12 +782,7 @@ class ReconcileInterface(QWidget):
                 value_date=d.strftime("%d %b %Y"),
                 value_date_iso=d.isoformat(),
             )
-            body_parts = []
-            if opening:
-                body_parts.append(f"<p>{opening}</p>")
-            body_parts.append("<p><b>Net figures:</b></p>")
-            body_parts.append(net_figures_html)
-            body = "\n".join(body_parts)
+            body = "<br><br>" + net_figures_html
             create_outlook_draft(
                 to=self._email_settings.get("email_to", ""),
                 cc=self._email_settings.get("email_cc", ""),
