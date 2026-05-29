@@ -786,8 +786,7 @@ class ReconcileInterface(QWidget):
             body = (
                 f"{opening}\n\n"
                 f"Net figures:\n\n"
-                f"{net_figures}\n\n"
-                f"Regards,"
+                f"{net_figures}"
             )
             create_outlook_draft(
                 to=self._email_settings.get("email_to", ""),

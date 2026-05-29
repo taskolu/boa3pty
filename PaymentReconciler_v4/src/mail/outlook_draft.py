@@ -22,7 +22,8 @@ def create_outlook_draft(
     mail.To = to
     mail.CC = cc
     mail.Subject = subject
-    mail.Body = body
     mail.Attachments.Add(attachment_path)
     mail.Display(False)
+    # Set after Display so Outlook can insert the user's default signature first.
+    mail.Body = body.rstrip() + "\n\n" + mail.Body
     return mail
