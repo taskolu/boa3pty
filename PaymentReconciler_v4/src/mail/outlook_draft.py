@@ -21,18 +21,25 @@ def create_outlook_draft(
 
     outlook = win32com.client.Dispatch("Outlook.Application")
     mail = outlook.CreateItem(0)
-    if from_address:
-        _set_sender(mail, outlook, from_address)
     mail.To = to
     mail.CC = cc
     mail.Subject = subject
     mail.Attachments.Add(attachment_path)
+
+    # Display first so Outlook inserts the user's normal default signature.
     mail.Display(False)
-    # Set after Display so Outlook can insert the user's default signature first.
+    signature_html = mail.HTMLBody
+    signature_text = mail.Body
+
+    # Set the shared/from mailbox after signature insertion. Setting it before
+    # Display can make Outlook use the shared mailbox signature, or no signature.
+    if from_address:
+        _set_sender(mail, outlook, from_address)
+
     if is_html:
-        mail.HTMLBody = body.rstrip() + "<br><br>" + mail.HTMLBody
+        mail.HTMLBody = body.rstrip() + "<br><br>" + signature_html
     else:
-        mail.Body = body.rstrip() + "\n\n" + mail.Body
+        mail.Body = body.rstrip() + "\n\n" + signature_text
     return mail
 
 
