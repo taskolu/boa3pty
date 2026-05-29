@@ -1,35 +1,60 @@
 import os
 import sys
 import tempfile
+import types
 import unittest
 from pathlib import Path
 from unittest.mock import Mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from src.mail.outlook_draft import _create_mail_item, _load_default_signature_html
+from src.mail.outlook_draft import create_outlook_draft, _load_default_signature_html
 
 
 class OutlookDraftTests(unittest.TestCase):
-    def test_create_mail_item_uses_shared_drafts_for_from_address(self):
+    def test_create_outlook_draft_matches_vba_order_and_preserves_signature(self):
         outlook = Mock()
-        recipient = Mock()
-        recipient.Resolved = True
-        drafts = Mock()
-        shared_mail = Mock()
+        mail = Mock()
+        mail.HTMLBody = "<p>Signature</p>"
+        outlook.CreateItem.return_value = mail
 
-        outlook.Session.CreateRecipient.return_value = recipient
-        outlook.Session.GetSharedDefaultFolder.return_value = drafts
-        drafts.Items.Add.return_value = shared_mail
+        win32com = types.ModuleType("win32com")
+        client = types.ModuleType("win32com.client")
+        client.Dispatch = Mock(return_value=outlook)
+        win32com.client = client
+        old_win32com = sys.modules.get("win32com")
+        old_client = sys.modules.get("win32com.client")
+        sys.modules["win32com"] = win32com
+        sys.modules["win32com.client"] = client
+        try:
+            result = create_outlook_draft(
+                to="paymentsrelease@convera.com",
+                cc="treasuryconfirms@convera.com",
+                subject="Payment Breakdown",
+                body="<br><br><table></table>",
+                attachment_path="report.xlsx",
+                from_address="TreasuryConfirms@convera.com",
+                is_html=True,
+            )
+        finally:
+            if old_win32com is None:
+                sys.modules.pop("win32com", None)
+            else:
+                sys.modules["win32com"] = old_win32com
+            if old_client is None:
+                sys.modules.pop("win32com.client", None)
+            else:
+                sys.modules["win32com.client"] = old_client
 
-        mail = _create_mail_item(outlook, "TreasuryConfirms@convera.com")
-
-        self.assertIs(mail, shared_mail)
-        outlook.Session.CreateRecipient.assert_called_once_with("TreasuryConfirms@convera.com")
-        recipient.Resolve.assert_called_once()
-        outlook.Session.GetSharedDefaultFolder.assert_called_once_with(recipient, 16)
-        drafts.Items.Add.assert_called_once_with("IPM.Note")
-        outlook.CreateItem.assert_not_called()
+        self.assertIs(result, mail)
+        outlook.CreateItem.assert_called_once_with(0)
+        self.assertEqual(mail.Subject, "Payment Breakdown")
+        self.assertEqual(mail.To, "paymentsrelease@convera.com")
+        self.assertEqual(mail.CC, "treasuryconfirms@convera.com")
+        self.assertEqual(mail.SentOnBehalfOfName, "TreasuryConfirms@convera.com")
+        mail.Display.assert_called_once_with()
+        self.assertEqual(mail.HTMLBody, "<br><br><table></table><p>Signature</p>")
+        mail.Attachments.Add.assert_called_once_with("report.xlsx")
 
     def test_signature_html_gets_base_uri_for_relative_assets(self):
         with tempfile.TemporaryDirectory() as tmp:

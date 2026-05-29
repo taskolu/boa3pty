@@ -2,8 +2,6 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
-OL_FOLDER_DRAFTS = 16
-
 
 def create_outlook_draft(
     *,
@@ -24,40 +22,26 @@ def create_outlook_draft(
         ) from exc
 
     outlook = win32com.client.Dispatch("Outlook.Application")
-    mail = _create_mail_item(outlook, from_address)
-    if from_address:
-        _set_sender(mail, outlook, from_address)
+    mail = outlook.CreateItem(0)
+    mail.Subject = subject
     mail.To = to
     mail.CC = cc
-    mail.Subject = subject
-    mail.Attachments.Add(attachment_path)
-
-    # Display so Outlook can insert the user's normal default signature.
-    mail.Display(False)
     if from_address:
         _set_sender(mail, outlook, from_address)
+
+    # Match the working VBA pattern: display first so Outlook injects the
+    # profile signature, then prepend our generated body to that signature.
+    mail.Display()
 
     if is_html:
         signature_html = mail.HTMLBody or _load_default_signature_html()
-        mail.HTMLBody = body.rstrip() + "<br><br>" + signature_html
+        mail.HTMLBody = body.rstrip() + signature_html
     else:
         signature_text = mail.Body
         mail.Body = body.rstrip() + "\n\n" + signature_text
+
+    mail.Attachments.Add(attachment_path)
     return mail
-
-
-def _create_mail_item(outlook, from_address: str):
-    if from_address:
-        try:
-            recipient = outlook.Session.CreateRecipient(from_address)
-            recipient.Resolve()
-            if recipient.Resolved:
-                drafts = outlook.Session.GetSharedDefaultFolder(recipient, OL_FOLDER_DRAFTS)
-                return drafts.Items.Add("IPM.Note")
-        except Exception:
-            pass
-
-    return outlook.CreateItem(0)
 
 
 def _set_sender(mail, outlook, from_address: str):
