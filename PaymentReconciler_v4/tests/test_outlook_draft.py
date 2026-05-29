@@ -4,11 +4,16 @@ import tempfile
 import types
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import Mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from src.mail.outlook_draft import create_outlook_draft, _load_default_signature_html
+from src.mail.outlook_draft import (
+    create_outlook_draft,
+    _find_outlook_account,
+    _load_default_signature_html,
+)
 
 
 class OutlookDraftTests(unittest.TestCase):
@@ -55,6 +60,21 @@ class OutlookDraftTests(unittest.TestCase):
         mail.Display.assert_called_once_with()
         self.assertEqual(mail.HTMLBody, "<br><br><table></table><p>Signature</p>")
         mail.Attachments.Add.assert_called_once_with("report.xlsx")
+
+    def test_find_outlook_account_matches_smtp_address(self):
+        wanted = SimpleNamespace(
+            SmtpAddress="TreasuryConfirms@Convera.com",
+            DisplayName="TreasuryConfirms",
+            UserName="TreasuryConfirms",
+        )
+        other = SimpleNamespace(
+            SmtpAddress="AbduTas@Convera.com",
+            DisplayName="AbduTas",
+            UserName="AbduTas",
+        )
+        outlook = SimpleNamespace(Session=SimpleNamespace(Accounts=[other, wanted]))
+
+        self.assertIs(_find_outlook_account(outlook, "treasuryconfirms@convera.com"), wanted)
 
     def test_signature_html_gets_base_uri_for_relative_assets(self):
         with tempfile.TemporaryDirectory() as tmp:

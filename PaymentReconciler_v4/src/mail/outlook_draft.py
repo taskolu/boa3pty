@@ -27,13 +27,13 @@ def create_outlook_draft(
     mail.To = to
     mail.CC = cc
     if from_address:
-        _set_sender(mail, from_address)
+        _set_sender(mail, outlook, from_address)
 
     # Match the working VBA pattern: display first so Outlook injects the
     # profile signature, then prepend our generated body to that signature.
     mail.Display()
     if from_address:
-        _set_sender(mail, from_address)
+        _set_sender(mail, outlook, from_address)
 
     if is_html:
         signature_html = mail.HTMLBody or _load_default_signature_html()
@@ -44,19 +44,93 @@ def create_outlook_draft(
 
     mail.Attachments.Add(attachment_path)
     if from_address:
-        _set_sender(mail, from_address)
+        _set_sender(mail, outlook, from_address)
     return mail
 
 
-def _set_sender(mail, from_address: str):
+def _set_sender(mail, outlook, from_address: str):
     wanted = from_address.strip()
     if not wanted:
         return
+
+    account = _find_outlook_account(outlook, wanted)
+    if account is not None:
+        try:
+            mail.SendUsingAccount = account
+        except Exception:
+            pass
 
     try:
         mail.SentOnBehalfOfName = wanted
     except Exception:
         pass
+
+    _set_sender_mapi_properties(mail, wanted)
+
+
+def _find_outlook_account(outlook, from_address: str):
+    wanted = from_address.strip().lower()
+    if not wanted:
+        return None
+
+    try:
+        accounts = outlook.Session.Accounts
+    except Exception:
+        return None
+
+    for account in _iter_outlook_collection(accounts):
+        try:
+            values = [
+                getattr(account, "SmtpAddress", ""),
+                getattr(account, "DisplayName", ""),
+                getattr(account, "UserName", ""),
+            ]
+        except Exception:
+            continue
+
+        for value in values:
+            if str(value or "").strip().lower() == wanted:
+                return account
+    return None
+
+
+def _iter_outlook_collection(collection):
+    try:
+        yield from collection
+        return
+    except TypeError:
+        pass
+    except Exception:
+        return
+
+    try:
+        count = int(collection.Count)
+    except Exception:
+        return
+
+    for index in range(1, count + 1):
+        try:
+            yield collection.Item(index)
+        except Exception:
+            continue
+
+
+def _set_sender_mapi_properties(mail, from_address: str):
+    try:
+        accessor = mail.PropertyAccessor
+    except Exception:
+        return
+
+    properties = {
+        "http://schemas.microsoft.com/mapi/proptag/0x0042001F": from_address,
+        "http://schemas.microsoft.com/mapi/proptag/0x0064001F": "SMTP",
+        "http://schemas.microsoft.com/mapi/proptag/0x0065001F": from_address,
+    }
+    for key, value in properties.items():
+        try:
+            accessor.SetProperty(key, value)
+        except Exception:
+            pass
 
 
 def _load_default_signature_html() -> str:
