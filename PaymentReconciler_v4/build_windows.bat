@@ -1,6 +1,19 @@
 @echo off
 setlocal
-cd /d "%~dp0"
+set "SCRIPT_DIR=%~dp0"
+cd /d "%SCRIPT_DIR%"
+if not exist "PaymentReconciler_v4.spec" (
+    if exist "PaymentReconciler_v4\PaymentReconciler_v4.spec" (
+        cd /d "PaymentReconciler_v4"
+    )
+)
+if not exist "PaymentReconciler_v4.spec" (
+    echo.
+    echo Build failed. PaymentReconciler_v4.spec was not found.
+    echo Run this from the PaymentReconciler_v4 folder, or from the folder that contains PaymentReconciler_v4.
+    pause
+    exit /b 1
+)
 set "BUILD_OUTPUT=C:\Users\AbduTas\OneDrive - Convera\Desktop\asdasd\BOA3PTY WSFX"
 set "BUILD_WORK=%TEMP%\PaymentReconciler_v4_build"
 
