@@ -20,7 +20,7 @@ class OutlookDraftTests(unittest.TestCase):
     def test_create_outlook_draft_matches_vba_order_and_preserves_signature(self):
         outlook = Mock()
         mail = Mock()
-        mail.HTMLBody = "<p>Signature</p>"
+        mail.HTMLBody = "<br><br><p>Signature</p>"
         outlook.CreateItem.return_value = mail
 
         win32com = types.ModuleType("win32com")
@@ -58,7 +58,7 @@ class OutlookDraftTests(unittest.TestCase):
         self.assertEqual(mail.CC, "treasuryconfirms@convera.com")
         self.assertEqual(mail.SentOnBehalfOfName, "TreasuryConfirms@convera.com")
         mail.Display.assert_called_once_with()
-        self.assertEqual(mail.HTMLBody, "<br><br><table></table><p>Signature</p>")
+        self.assertEqual(mail.HTMLBody, "<br><br><table></table><br><p>Signature</p>")
         mail.Attachments.Add.assert_called_once_with("report.xlsx")
 
     def test_find_outlook_account_matches_smtp_address(self):

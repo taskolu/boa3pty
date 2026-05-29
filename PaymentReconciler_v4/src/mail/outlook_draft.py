@@ -37,7 +37,7 @@ def create_outlook_draft(
 
     if is_html:
         signature_html = mail.HTMLBody or _load_default_signature_html()
-        mail.HTMLBody = body.rstrip() + signature_html
+        mail.HTMLBody = body.rstrip() + "<br>" + _strip_leading_breaks(signature_html)
     else:
         signature_text = mail.Body
         mail.Body = body.rstrip() + "\n\n" + signature_text
@@ -66,6 +66,20 @@ def _set_sender(mail, outlook, from_address: str):
         pass
 
     _set_sender_mapi_properties(mail, wanted)
+
+
+def _strip_leading_breaks(html: str) -> str:
+    cleaned = (html or "").lstrip()
+    while True:
+        lowered = cleaned.lower()
+        if lowered.startswith("<br>"):
+            cleaned = cleaned[4:].lstrip()
+        elif lowered.startswith("<br/>"):
+            cleaned = cleaned[5:].lstrip()
+        elif lowered.startswith("<br />"):
+            cleaned = cleaned[6:].lstrip()
+        else:
+            return cleaned
 
 
 def _find_outlook_account(outlook, from_address: str):
