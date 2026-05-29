@@ -1,6 +1,7 @@
 from datetime import date
 from decimal import Decimal
 from collections import defaultdict
+from html import escape
 from openpyxl import Workbook
 from openpyxl.styles import Font, PatternFill, Alignment, numbers
 from openpyxl.utils import get_column_letter
@@ -36,6 +37,44 @@ def format_net_figures(results: list[MatchResult]) -> str:
     for ccy in sorted(negatives):
         lines.append(f"{ccy:<6} {negatives[ccy]:,.2f}")
     return "\n".join(lines)
+
+
+def net_totals_for_display(results: list[MatchResult]) -> list[tuple[str, Decimal]]:
+    net = calculate_net_totals(results)
+    positives = [(ccy, amt) for ccy, amt in net.items() if amt >= 0]
+    negatives = [(ccy, amt) for ccy, amt in net.items() if amt < 0]
+    return sorted(positives) + sorted(negatives)
+
+
+def format_net_figures_html(results: list[MatchResult]) -> str:
+    rows = net_totals_for_display(results)
+    if not rows:
+        return "<p>(no WallStreet net figures)</p>"
+
+    table_rows = []
+    for ccy, amount in rows:
+        color = "#375623" if amount >= 0 else "#9C0006"
+        table_rows.append(
+            "<tr>"
+            f"<td style=\"padding:3px 18px 3px 6px; font-weight:bold;\">{escape(ccy)}</td>"
+            f"<td style=\"padding:3px 6px 3px 18px; text-align:right; "
+            f"font-weight:bold; color:{color};\">{amount:,.2f}</td>"
+            "</tr>"
+        )
+
+    return (
+        "<table cellspacing=\"0\" cellpadding=\"0\" "
+        "style=\"border-collapse:collapse; font-family:Aptos, Calibri, Arial, sans-serif; "
+        "font-size:11pt;\">"
+        "<tr>"
+        "<th style=\"background:#2E4A7A; color:#FFFFFF; padding:4px 18px 4px 6px; "
+        "text-align:left; font-weight:bold;\">Ccy</th>"
+        "<th style=\"background:#2E4A7A; color:#FFFFFF; padding:4px 6px 4px 18px; "
+        "text-align:right; font-weight:bold;\">Total</th>"
+        "</tr>"
+        + "".join(table_rows)
+        + "</table>"
+    )
 
 
 def generate_payment_breakdown(

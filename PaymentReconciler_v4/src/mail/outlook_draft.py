@@ -8,6 +8,7 @@ def create_outlook_draft(
     subject: str,
     body: str,
     attachment_path: str,
+    is_html: bool = False,
 ):
     try:
         import win32com.client
@@ -25,5 +26,8 @@ def create_outlook_draft(
     mail.Attachments.Add(attachment_path)
     mail.Display(False)
     # Set after Display so Outlook can insert the user's default signature first.
-    mail.Body = body.rstrip() + "\n\n" + mail.Body
+    if is_html:
+        mail.HTMLBody = body.rstrip() + "<br><br>" + mail.HTMLBody
+    else:
+        mail.Body = body.rstrip() + "\n\n" + mail.Body
     return mail

@@ -287,7 +287,7 @@ class CounterpartyDialog(QDialog):
         ))
         form.addRow("Email Subject:", self.txt_email_subject)
 
-        self.txt_email_opening = _LE(config.get("email_opening", "Hi Team,"))
+        self.txt_email_opening = _LE(config.get("email_opening", ""))
         form.addRow("Email Opening:", self.txt_email_opening)
 
         self.chk_auto = QCheckBox("Auto-resolve DT06", self)

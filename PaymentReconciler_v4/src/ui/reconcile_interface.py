@@ -19,7 +19,7 @@ from qfluentwidgets import (
 )
 
 from src.core.models import MatchStatus
-from src.export.report_generator import generate_payment_breakdown, format_net_figures
+from src.export.report_generator import generate_payment_breakdown, format_net_figures_html
 from src.mail.outlook_draft import create_outlook_draft
 
 
@@ -772,8 +772,8 @@ class ReconcileInterface(QWidget):
             report_path = self._create_temp_report_path(d, cp)
             generate_payment_breakdown(self._all_results, report_path, d)
 
-            net_figures = format_net_figures(self._all_results) or "(no WallStreet net figures)"
-            opening = self._email_settings.get("email_opening") or "Hi Team,"
+            net_figures_html = format_net_figures_html(self._all_results)
+            opening = self._email_settings.get("email_opening", "").strip()
             subject_template = (
                 self._email_settings.get("email_subject")
                 or "Payment Breakdown - {counterparty} - {value_date}"
@@ -783,16 +783,18 @@ class ReconcileInterface(QWidget):
                 value_date=d.strftime("%d %b %Y"),
                 value_date_iso=d.isoformat(),
             )
-            body = (
-                f"{opening}\n\n"
-                f"Net figures:\n\n"
-                f"{net_figures}"
-            )
+            body_parts = []
+            if opening:
+                body_parts.append(f"<p>{opening}</p>")
+            body_parts.append("<p><b>Net figures:</b></p>")
+            body_parts.append(net_figures_html)
+            body = "\n".join(body_parts)
             create_outlook_draft(
                 to=self._email_settings.get("email_to", ""),
                 cc=self._email_settings.get("email_cc", ""),
                 subject=subject,
                 body=body,
+                is_html=True,
                 attachment_path=report_path,
             )
             QMessageBox.information(self, "Draft Email", "Outlook draft created.")

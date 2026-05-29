@@ -102,9 +102,16 @@ class MainWindow(FluentWindow):
         self._result_saved = False
 
         email_settings = {
-            key: cp.get(key, "") for key in (
-                "email_to", "email_cc", "email_subject", "email_opening"
-            )
+            "email_to": cp.get("email_to") or "paymentsrelease@convera.com",
+            "email_cc": (
+                cp.get("email_cc")
+                or "treasuryconfirms@convera.com; bankreconaccounting@convera.com; jaunado@convera.com"
+            ),
+            "email_subject": (
+                cp.get("email_subject")
+                or "Payment Breakdown - {counterparty} - {value_date}"
+            ),
+            "email_opening": cp.get("email_opening", ""),
         }
         self.reconcile_iface.load_results(
             results,
