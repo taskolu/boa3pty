@@ -13,6 +13,7 @@ from src.mail.outlook_draft import (
     create_outlook_draft,
     _find_outlook_account,
     _load_default_signature_html,
+    _strip_leading_signature_space,
 )
 
 
@@ -75,6 +76,21 @@ class OutlookDraftTests(unittest.TestCase):
         outlook = SimpleNamespace(Session=SimpleNamespace(Accounts=[other, wanted]))
 
         self.assertIs(_find_outlook_account(outlook, "treasuryconfirms@convera.com"), wanted)
+
+    def test_strip_leading_signature_space_removes_outlook_empty_paragraphs(self):
+        signature = (
+            "<html><body>"
+            "<p class=MsoNormal>&nbsp;</p>"
+            "<div><br></div>"
+            "<p class=MsoNormal><span>&nbsp;</span><o:p>&nbsp;</o:p></p>"
+            "<p>Regards,</p>"
+            "</body></html>"
+        )
+
+        cleaned = _strip_leading_signature_space(signature)
+
+        self.assertNotIn("&nbsp;</p><div><br></div>", cleaned)
+        self.assertIn("<body><p>Regards,</p>", cleaned)
 
     def test_signature_html_gets_base_uri_for_relative_assets(self):
         with tempfile.TemporaryDirectory() as tmp:
