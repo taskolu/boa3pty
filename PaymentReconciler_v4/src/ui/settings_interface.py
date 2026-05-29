@@ -272,6 +272,9 @@ class CounterpartyDialog(QDialog):
         self.txt_amount_tolerances.setPlaceholderText("e.g. IQD=1, CLP=1, JPY=1")
         form.addRow("Amount Tolerances:", self.txt_amount_tolerances)
 
+        self.txt_email_from = _LE(config.get("email_from", "TreasuryConfirms@convera.com"))
+        form.addRow("Email From:", self.txt_email_from)
+
         self.txt_email_to = _LE(config.get("email_to", "paymentsrelease@convera.com"))
         form.addRow("Email To:", self.txt_email_to)
 
@@ -376,6 +379,7 @@ class CounterpartyDialog(QDialog):
                     self.txt_amount_tolerances.text()
                 ),
                 "email_to":                       self.txt_email_to.text().strip(),
+                "email_from":                     self.txt_email_from.text().strip(),
                 "email_cc":                       self.txt_email_cc.text().strip(),
                 "email_subject":                  self.txt_email_subject.text().strip(),
                 "email_opening":                  self.txt_email_opening.text().strip(),

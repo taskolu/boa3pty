@@ -102,6 +102,7 @@ class MainWindow(FluentWindow):
         self._result_saved = False
 
         email_settings = {
+            "email_from": cp.get("email_from") or "TreasuryConfirms@convera.com",
             "email_to": cp.get("email_to") or "paymentsrelease@convera.com",
             "email_cc": (
                 cp.get("email_cc")

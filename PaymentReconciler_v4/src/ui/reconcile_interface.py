@@ -794,6 +794,7 @@ class ReconcileInterface(QWidget):
                 cc=self._email_settings.get("email_cc", ""),
                 subject=subject,
                 body=body,
+                from_address=self._email_settings.get("email_from", ""),
                 is_html=True,
                 attachment_path=report_path,
             )

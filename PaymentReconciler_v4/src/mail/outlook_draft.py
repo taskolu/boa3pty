@@ -8,6 +8,7 @@ def create_outlook_draft(
     subject: str,
     body: str,
     attachment_path: str,
+    from_address: str = "",
     is_html: bool = False,
 ):
     try:
@@ -20,6 +21,8 @@ def create_outlook_draft(
 
     outlook = win32com.client.Dispatch("Outlook.Application")
     mail = outlook.CreateItem(0)
+    if from_address:
+        _set_sender(mail, outlook, from_address)
     mail.To = to
     mail.CC = cc
     mail.Subject = subject
@@ -31,3 +34,24 @@ def create_outlook_draft(
     else:
         mail.Body = body.rstrip() + "\n\n" + mail.Body
     return mail
+
+
+def _set_sender(mail, outlook, from_address: str):
+    wanted = from_address.strip().lower()
+    if not wanted:
+        return
+
+    try:
+        for account in outlook.Session.Accounts:
+            smtp = str(getattr(account, "SmtpAddress", "") or "").lower()
+            if smtp == wanted:
+                mail.SendUsingAccount = account
+                return
+    except Exception:
+        pass
+
+    # Shared mailboxes often appear as "send on behalf of" rather than a full account.
+    try:
+        mail.SentOnBehalfOfName = from_address
+    except Exception:
+        pass
