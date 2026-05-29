@@ -80,7 +80,9 @@ class MainWindow(FluentWindow):
             lookback = cp.get("lookback_days", 10)
             dt06_code = cp.get("dt06_code", "DT06")
             amount_tolerances = cp.get("amount_tolerances", {})
-            archive_path = resolve_archive_path(self.config.archive_path)
+            archive_path = resolve_archive_path(
+                self.config.get_counterparty_archive_path(counterparty_name)
+            )
             reference_date = _dominant_gpg_value_date(gpg_records)
             archived_flags = lookup_flagged_records(
                 archive_path, display_name, lookback_days=lookback,
@@ -127,7 +129,9 @@ class MainWindow(FluentWindow):
             return
         label = counterparty_display or self._current_counterparty or "UNKNOWN"
         try:
-            archive_path = resolve_archive_path(self.config.archive_path)
+            archive_path = resolve_archive_path(
+                self.config.get_counterparty_archive_path(self._current_counterparty)
+            )
             am = ArchiveManager(archive_path)
 
             expected = os.path.join(archive_path, f"{value_date.isoformat()}_{label}.xlsx")

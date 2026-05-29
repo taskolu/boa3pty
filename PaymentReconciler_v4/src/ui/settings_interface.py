@@ -76,11 +76,11 @@ class SettingsInterface(QWidget):
         arch_card = CardWidget(container)
         arch_lay = QVBoxLayout(arch_card)
         arch_lay.setContentsMargins(16, 12, 16, 12)
-        arch_lay.addWidget(BodyLabel("Archive Path (OneDrive folder)"))
+        arch_lay.addWidget(BodyLabel("Default Archive Path (fallback)"))
         arch_row = QHBoxLayout()
         self.txt_archive_path = LineEdit(arch_card)
         self.txt_archive_path.setText(self.config.archive_path)
-        self.txt_archive_path.setPlaceholderText("e.g. .. (folder above app)")
+        self.txt_archive_path.setPlaceholderText("Used when a counterparty has no archive path")
         self.txt_archive_path.textChanged.connect(self._update_resolved_label)
         arch_row.addWidget(self.txt_archive_path, 1)
         btn_browse = PushButton("Browse…", arch_card)
@@ -140,14 +140,7 @@ class SettingsInterface(QWidget):
             return
         path = QFileDialog.getExistingDirectory(self, "Select Archive Folder")
         if path:
-            # Replace OneDrive root with %OneDrive% so path works for any user
-            onedrive = os.environ.get("OneDrive", "") or os.environ.get("OneDriveCommercial", "")
-            if onedrive:
-                norm_od = os.path.normpath(onedrive)
-                norm_path = os.path.normpath(path)
-                if norm_path.startswith(norm_od):
-                    path = "%OneDrive%" + norm_path[len(norm_od):]
-            self.txt_archive_path.setText(path)
+            self.txt_archive_path.setText(_normalize_onedrive_path(path))
 
     def _refresh_cp_list(self):
         self.lst_cp.clear()
@@ -248,6 +241,15 @@ class CounterpartyDialog(QDialog):
         self.txt_ws_name = _LE(config.get("wallstreet_counterparty_name", ""))
         form.addRow("WallStreet Customer Name:", self.txt_ws_name)
 
+        archive_row = QHBoxLayout()
+        self.txt_archive_path = _LE(config.get("archive_path", ""))
+        self.txt_archive_path.setPlaceholderText("leave blank to use default archive path")
+        archive_row.addWidget(self.txt_archive_path)
+        btn_archive = PushButton("Browse...", self)
+        btn_archive.clicked.connect(self._browse_archive_path)
+        archive_row.addWidget(btn_archive)
+        form.addRow("Archive Path:", archive_row)
+
         self.cmb_date_format = ComboBox(self)
         formats = ["%Y-%m-%d", "%d/%m/%Y", "%m/%d/%Y", "%d-%b-%Y", "%d %b %Y"]
         self.cmb_date_format.addItems(formats)
@@ -347,6 +349,7 @@ class CounterpartyDialog(QDialog):
                 "display_name":                   self.txt_display_name.text().strip(),
                 "csv_bank_code":                  self.txt_bank_code.text().strip(),
                 "wallstreet_counterparty_name":   self.txt_ws_name.text().strip(),
+                "archive_path":                   self.txt_archive_path.text().strip(),
                 "csv_column_mapping":             csv_map,
                 "date_format":                    self.cmb_date_format.currentText(),
                 "dt06_code":                      self.txt_dt06.text().strip(),
@@ -379,3 +382,18 @@ class CounterpartyDialog(QDialog):
             if ccy and value:
                 parsed[ccy] = value
         return parsed
+
+    def _browse_archive_path(self):
+        path = QFileDialog.getExistingDirectory(self, "Select Counterparty Archive Folder")
+        if path:
+            self.txt_archive_path.setText(_normalize_onedrive_path(path))
+
+
+def _normalize_onedrive_path(path: str) -> str:
+    onedrive = os.environ.get("OneDrive", "") or os.environ.get("OneDriveCommercial", "")
+    if onedrive:
+        norm_od = os.path.normpath(onedrive)
+        norm_path = os.path.normpath(path)
+        if norm_path.startswith(norm_od):
+            return "%OneDrive%" + norm_path[len(norm_od):]
+    return path

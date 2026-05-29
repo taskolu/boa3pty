@@ -305,15 +305,33 @@ class ArchiveInterface(QWidget):
     def reload_config(self):
         self.refresh()
 
+    def _archive_managers(self) -> list[ArchiveManager]:
+        managers = []
+        for raw_path in self.config.get_archive_paths():
+            try:
+                managers.append(ArchiveManager(resolve_archive_path(raw_path)))
+            except Exception:
+                continue
+        return managers
+
+    def _archive_manager_for_file(self, filepath: str) -> ArchiveManager:
+        import os
+        return ArchiveManager(os.path.dirname(filepath))
+
     def refresh(self):
         self._last_refresh = time.monotonic()
         self._loaded_filepath = ""
-        try:
-            archive_path = resolve_archive_path(self.config.archive_path)
-            am = ArchiveManager(archive_path)
-            self._archive_list = am.list_archives()
-        except Exception:
-            self._archive_list = []
+        archives = []
+        for am in self._archive_managers():
+            try:
+                archives.extend(am.list_archives())
+            except Exception:
+                continue
+        self._archive_list = sorted(
+            archives,
+            key=lambda a: (a.get("date", ""), a.get("counterparty", "")),
+            reverse=True,
+        )
 
         current = self._current_date_str()
         available_dates = [a["date"] for a in self._archive_list]
@@ -366,8 +384,7 @@ class ArchiveInterface(QWidget):
             return
 
         try:
-            archive_path = resolve_archive_path(self.config.archive_path)
-            am = ArchiveManager(archive_path)
+            am = self._archive_manager_for_file(filepath)
             rows = am.load_results_sheet(filepath)
         except Exception as e:
             QMessageBox.warning(self, "Load Error", str(e))
@@ -492,10 +509,8 @@ class ArchiveInterface(QWidget):
         self.tbl.setColumnHidden(_DATE_COL, False)
         self.lbl_count.setText("")
 
-        try:
-            archive_path = resolve_archive_path(self.config.archive_path)
-            am = ArchiveManager(archive_path)
-        except Exception:
+        managers = self._archive_managers()
+        if not managers:
             self.lbl_search_info.setText("Archive not accessible.")
             return
 
@@ -503,6 +518,7 @@ class ArchiveInterface(QWidget):
         results = []
         for arch in self._archive_list:
             try:
+                am = self._archive_manager_for_file(arch["file"])
                 rows = am.load_results_sheet(arch["file"])
             except Exception:
                 continue
@@ -691,10 +707,8 @@ class ArchiveInterface(QWidget):
         QTimer.singleShot(50, self._do_load_outstanding_missing)
         
     def _do_load_outstanding_missing(self):
-        try:
-            archive_path = resolve_archive_path(self.config.archive_path)
-            am = ArchiveManager(archive_path)
-        except Exception:
+        managers = self._archive_managers()
+        if not managers:
             self.lbl_missing_count.setText("Archive not accessible.")
             self.btn_refresh_missing.setText("Refresh Outstanding Missing")
             self.btn_refresh_missing.setEnabled(True)
@@ -703,11 +717,14 @@ class ArchiveInterface(QWidget):
         # We will scan all archives in chronological order
         archives_sorted = sorted(self._archive_list, key=lambda a: a["date"])
         
-        disregarded = am.get_disregarded_confs()
+        disregarded = set()
+        for am in managers:
+            disregarded.update(am.get_disregarded_confs())
         
         all_missing = {}
         for arch in archives_sorted:
             try:
+                am = self._archive_manager_for_file(arch["file"])
                 rows = am.load_results_sheet(arch["file"])
             except Exception:
                 continue
@@ -789,8 +806,7 @@ class ArchiveInterface(QWidget):
         
         if reply == QMessageBox.Yes:
             try:
-                archive_path = resolve_archive_path(self.config.archive_path)
-                am = ArchiveManager(archive_path)
+                am = self._archive_managers()[0]
                 am.add_disregarded_confs(confs_to_disregard)
                 self._load_outstanding_missing() # Refresh the view
             except Exception as e:

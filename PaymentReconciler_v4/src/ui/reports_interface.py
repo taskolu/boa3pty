@@ -61,26 +61,32 @@ class ReportsInterface(QWidget):
 
     def _populate_counterparties(self):
         self.cmb_cp.clear()
+        self._cp_display_to_name = {}
         for name in self.config.counterparty_names:
             display = self.config.get_display_name(name)
             self.cmb_cp.addItem(display)
+            self._cp_display_to_name[display] = name
 
     def _export(self):
-        cp_name = self.cmb_cp.currentText()
-        if not cp_name:
+        cp_display = self.cmb_cp.currentText()
+        if not cp_display:
             QMessageBox.warning(self, "No Counterparty", "Add a counterparty in Settings first.")
             return
+        cp_name = getattr(self, "_cp_display_to_name", {}).get(
+            cp_display,
+            self.config.get_counterparty_name_by_display(cp_display) or cp_display,
+        )
 
         qd = self.dt_report.date()
         report_date = date(qd.year(), qd.month(), qd.day())
 
-        archive_path = resolve_archive_path(self.config.archive_path)
+        archive_path = resolve_archive_path(self.config.get_counterparty_archive_path(cp_name))
         try:
             am = ArchiveManager(archive_path)
-            data = am.load_daily(report_date, cp_name)
+            data = am.load_daily(report_date, cp_display)
             if not data:
                 QMessageBox.warning(self, "No Archive",
-                    f"No archive found for {report_date.isoformat()} / {cp_name}.")
+                    f"No archive found for {report_date.isoformat()} / {cp_display}.")
                 return
         except Exception as e:
             QMessageBox.critical(self, "Error", str(e))
@@ -88,7 +94,7 @@ class ReportsInterface(QWidget):
 
         out_path, _ = QFileDialog.getSaveFileName(
             self, "Save Report",
-            f"{report_date.isoformat()}_{cp_name}_breakdown.xlsx",
+            f"{report_date.isoformat()}_{cp_display}_breakdown.xlsx",
             "Excel Files (*.xlsx)"
         )
         if not out_path:
