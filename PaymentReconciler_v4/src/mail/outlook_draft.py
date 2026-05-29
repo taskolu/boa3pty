@@ -2,6 +2,8 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
+OL_FOLDER_DRAFTS = 16
+
 
 def create_outlook_draft(
     *,
@@ -22,7 +24,7 @@ def create_outlook_draft(
         ) from exc
 
     outlook = win32com.client.Dispatch("Outlook.Application")
-    mail = outlook.CreateItem(0)
+    mail = _create_mail_item(outlook, from_address)
     if from_address:
         _set_sender(mail, outlook, from_address)
     mail.To = to
@@ -42,6 +44,20 @@ def create_outlook_draft(
         signature_text = mail.Body
         mail.Body = body.rstrip() + "\n\n" + signature_text
     return mail
+
+
+def _create_mail_item(outlook, from_address: str):
+    if from_address:
+        try:
+            recipient = outlook.Session.CreateRecipient(from_address)
+            recipient.Resolve()
+            if recipient.Resolved:
+                drafts = outlook.Session.GetSharedDefaultFolder(recipient, OL_FOLDER_DRAFTS)
+                return drafts.Items.Add("IPM.Note")
+        except Exception:
+            pass
+
+    return outlook.CreateItem(0)
 
 
 def _set_sender(mail, outlook, from_address: str):
@@ -77,7 +93,23 @@ def _load_default_signature_html() -> str:
     )
     for path in candidates:
         try:
-            return path.read_text(encoding="utf-8", errors="ignore")
+            return _add_signature_base_uri(path.read_text(encoding="utf-8", errors="ignore"), path.parent)
         except Exception:
             continue
     return ""
+
+
+def _add_signature_base_uri(html: str, signature_dir: Path) -> str:
+    if "<base " in html.lower():
+        return html
+
+    base = f'<base href="{signature_dir.as_uri()}/">'
+    lower = html.lower()
+    head_idx = lower.find("<head")
+    if head_idx < 0:
+        return base + html
+
+    head_end = lower.find(">", head_idx)
+    if head_end < 0:
+        return base + html
+    return html[: head_end + 1] + base + html[head_end + 1 :]
