@@ -52,6 +52,34 @@ class ImportCounterpartyRoutingTests(unittest.TestCase):
 
             self.assertIsNone(cfg.find_by_bank_code("UNKNOWNBOA"))
 
+    def test_specific_boa_mxn_code_overrides_boa_catchall(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            cfg_path = Path(tmp) / "config.json"
+            cfg_path.write_text(json.dumps({
+                "counterparties": {
+                    "BOA3PTY": {"csv_bank_code": ""},
+                    "BOA Exotic MXN": {"csv_bank_code": "MXNCUKBOA"},
+                }
+            }))
+            cfg = ConfigManager(str(cfg_path))
+
+            self.assertEqual(cfg.find_by_bank_code("MXNCUKBOA"), "BOA Exotic MXN")
+
+    def test_non_mxn_boa_codes_use_blank_code_boa_catchall(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            cfg_path = Path(tmp) / "config.json"
+            cfg_path.write_text(json.dumps({
+                "counterparties": {
+                    "BOA3PTY": {"csv_bank_code": ""},
+                    "BOA Exotic MXN": {"csv_bank_code": "MXNCUKBOA"},
+                    "PAGONXT": {"csv_bank_code": "BRLCUKPAGO,CNYCUKPAGO"},
+                }
+            }))
+            cfg = ConfigManager(str(cfg_path))
+
+            self.assertEqual(cfg.find_by_bank_code("ALLCUKBOA"), "BOA3PTY")
+            self.assertEqual(cfg.find_by_bank_code("NPRCUKBOA"), "BOA3PTY")
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -90,24 +90,14 @@ class ConfigManager:
             codes = [c.strip() for c in stored.split(",") if c.strip()]
             if code_upper in {c.upper() for c in codes}:
                 return name
-        # Pass 2: suffix match against counterparty internal name
+        # Pass 2: suffix catch-all against counterparties with no explicit bank codes.
+        # Explicit bank-code counterparties should only match exact codes above.
         if len(code) >= 3:
             suffix = code_upper[-3:]
             matches = [
                 name for name in counterparties
-                if suffix in name.upper()
+                if not _bank_codes(counterparties[name]) and suffix in name.upper()
             ]
-            if len(matches) == 1:
-                return matches[0]
-        # Pass 3: suffix match against stored bank codes (explicit config fallback)
-        if len(code) >= 3:
-            suffix = code_upper[-3:]
-            matches = []
-            for name, cp in counterparties.items():
-                stored = cp.get("csv_bank_code", "")
-                codes = [c.strip() for c in stored.split(",") if c.strip()]
-                if any(c.upper().endswith(suffix) for c in codes if len(c) >= 3):
-                    matches.append(name)
             if len(matches) == 1:
                 return matches[0]
         return None
@@ -130,3 +120,8 @@ class ConfigManager:
     def save(self):
         with open(self._path, "w") as f:
             json.dump(self._data, f, indent=2)
+
+
+def _bank_codes(counterparty_config: dict) -> list[str]:
+    stored = counterparty_config.get("csv_bank_code", "")
+    return [c.strip() for c in stored.split(",") if c.strip()]
