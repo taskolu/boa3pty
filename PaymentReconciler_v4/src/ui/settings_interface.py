@@ -423,10 +423,15 @@ class CounterpartyDialog(QDialog):
 
 
 def _normalize_onedrive_path(path: str) -> str:
-    onedrive = os.environ.get("OneDrive", "") or os.environ.get("OneDriveCommercial", "")
-    if onedrive:
-        norm_od = os.path.normpath(onedrive)
-        norm_path = os.path.normpath(path)
+    roots = [
+        ("%OneDriveCommercial%", os.environ.get("OneDriveCommercial", "")),
+        ("%OneDrive%", os.environ.get("OneDrive", "")),
+    ]
+    norm_path = os.path.normpath(path)
+    for token, root in roots:
+        if not root:
+            continue
+        norm_od = os.path.normpath(root)
         if norm_path.startswith(norm_od):
-            return "%OneDrive%" + norm_path[len(norm_od):]
+            return token + norm_path[len(norm_od):]
     return path

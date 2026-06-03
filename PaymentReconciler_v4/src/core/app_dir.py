@@ -6,6 +6,7 @@ Packaged exe:  Settings/app.exe              → app dir = Settings/
 """
 from __future__ import annotations
 import os
+import re
 import sys
 
 
@@ -25,7 +26,23 @@ def resolve_archive_path(raw_path: str) -> str:
     so a path like '%OneDrive%\\...\\BOA3PTY Archive' works for any user.
     If relative after expansion, resolves relative to the app directory.
     """
-    expanded = os.path.expandvars(raw_path)
+    expanded = _expand_env_vars(raw_path)
     if os.path.isabs(expanded):
         return os.path.normpath(expanded)
     return os.path.normpath(os.path.join(get_app_dir(), expanded))
+
+
+def _expand_env_vars(raw_path: str) -> str:
+    expanded = os.path.expandvars(raw_path)
+
+    def replace_var(match):
+        name = match.group(1)
+        if name.lower() in {"onedrive", "onedrivecommercial"}:
+            return (
+                os.environ.get("OneDriveCommercial")
+                or os.environ.get("OneDrive")
+                or match.group(0)
+            )
+        return os.environ.get(name, match.group(0))
+
+    return re.sub(r"%([^%]+)%", replace_var, expanded)
