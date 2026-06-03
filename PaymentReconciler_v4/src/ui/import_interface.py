@@ -17,6 +17,7 @@ from qfluentwidgets import (
 )
 
 from src.core.counterparty_routing import matched_counterparty_for_bank_code
+from src.core.file_types import is_supported_gpg_report_file
 from src.core.parser_gpg import parse_gpg_file, _read_rows
 from src.core.parser_wallstreet import parse_wallstreet_paste, get_detected_ws_headers
 
@@ -108,6 +109,85 @@ def _sniff_file(path: str) -> tuple[list[str], list[dict], str]:
     return headers, rows, delimiter
 
 
+class GpgDropZone(CardWidget):
+    fileDropped = Signal(str)
+    fileRejected = Signal(str)
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setAcceptDrops(True)
+        self.setMinimumHeight(98)
+        self.setObjectName("gpgDropZone")
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(14, 12, 14, 12)
+        layout.setSpacing(4)
+
+        title = BodyLabel("Drop GPG file here")
+        title.setAlignment(Qt.AlignCenter)
+        title.setStyleSheet("font-weight: 600;")
+        layout.addWidget(title)
+
+        hint = BodyLabel("CSV, XLS, XLSX, XLSM")
+        hint.setAlignment(Qt.AlignCenter)
+        hint.setStyleSheet("color: #9aa0a6;")
+        layout.addWidget(hint)
+
+        self._set_active(False)
+
+    def dragEnterEvent(self, event):
+        if self._event_has_supported_file(event):
+            event.acceptProposedAction()
+            self._set_active(True)
+        else:
+            event.ignore()
+
+    def dragMoveEvent(self, event):
+        if self._event_has_supported_file(event):
+            event.acceptProposedAction()
+        else:
+            event.ignore()
+
+    def dragLeaveEvent(self, event):
+        self._set_active(False)
+        super().dragLeaveEvent(event)
+
+    def dropEvent(self, event):
+        self._set_active(False)
+        path = self._first_local_file(event)
+        if path and is_supported_gpg_report_file(path):
+            event.acceptProposedAction()
+            self.fileDropped.emit(path)
+        else:
+            event.ignore()
+            self.fileRejected.emit(path or "")
+
+    def _event_has_supported_file(self, event) -> bool:
+        path = self._first_local_file(event)
+        return bool(path and is_supported_gpg_report_file(path))
+
+    def _first_local_file(self, event) -> str:
+        mime = event.mimeData()
+        if not mime.hasUrls():
+            return ""
+        for url in mime.urls():
+            path = url.toLocalFile()
+            if path:
+                return path
+        return ""
+
+    def _set_active(self, active: bool):
+        border = "#4fc3f7" if active else "#5b626b"
+        bg = "rgba(79, 195, 247, 0.12)" if active else "rgba(255, 255, 255, 0.03)"
+        self.setStyleSheet(
+            "#gpgDropZone {"
+            f"border: 1px dashed {border};"
+            "border-radius: 6px;"
+            f"background: {bg};"
+            "}"
+        )
+
+
 class ImportInterface(QWidget):
     reconciliation_requested = Signal(list, list, str)
 
@@ -141,6 +221,11 @@ class ImportInterface(QWidget):
         gpg_lay.setSpacing(10)
 
         gpg_lay.addWidget(BodyLabel("GPG CSV / Excel File"))
+        self.drop_gpg = GpgDropZone(self)
+        self.drop_gpg.fileDropped.connect(self._load_gpg_file)
+        self.drop_gpg.fileRejected.connect(self._reject_dropped_file)
+        gpg_lay.addWidget(self.drop_gpg)
+
         self.btn_browse = PushButton("Browse File…")
         self.btn_browse.clicked.connect(self._browse_csv)
         gpg_lay.addWidget(self.btn_browse)
@@ -205,9 +290,16 @@ class ImportInterface(QWidget):
         downloads = os.path.join(os.path.expanduser("~"), "Downloads")
         path, _ = QFileDialog.getOpenFileName(
             self, "Open GPG File", downloads,
-            "GPG Reports (*.csv *.xls *.xlsx);;All Files (*)"
+            "GPG Reports (*.csv *.xls *.xlsx *.xlsm);;All Files (*)"
         )
         if not path:
+            return
+
+        self._load_gpg_file(path)
+
+    def _load_gpg_file(self, path: str):
+        if not is_supported_gpg_report_file(path):
+            self._reject_dropped_file(path)
             return
 
         for cp_name in self.config.counterparty_names:
@@ -228,6 +320,14 @@ class ImportInterface(QWidget):
                 continue
 
         self._auto_detect_and_load(path)
+
+    def _reject_dropped_file(self, path: str):
+        name = os.path.basename(path) if path else "that file"
+        QMessageBox.warning(
+            self,
+            "Unsupported File",
+            f"Cannot upload {name}.\n\nUse a CSV, XLS, XLSX, or XLSM GPG report.",
+        )
 
     def _auto_detect_and_load(self, path: str):
         try:
