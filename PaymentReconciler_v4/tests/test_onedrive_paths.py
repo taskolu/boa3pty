@@ -1,5 +1,6 @@
 import os
 import sys
+import tempfile
 import unittest
 from unittest.mock import patch
 from pathlib import Path
@@ -27,6 +28,27 @@ class OneDrivePathTests(unittest.TestCase):
                 "Documents - Trade Confirmations Team site/TRADE CONFIRMATION"
             ),
         )
+
+    def test_sharepoint_documents_folder_variant_uses_existing_path(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / "OneDrive - Convera"
+            existing = (
+                root
+                / "Trade Confirmations Team site - Documents"
+                / "TRADE CONFIRMATION"
+                / "Exotic Archives"
+                / "PAGO Archive"
+            )
+            existing.mkdir(parents=True)
+
+            env = {"OneDriveCommercial": str(root)}
+            with patch.dict(os.environ, env, clear=True):
+                resolved = resolve_archive_path(
+                    "%OneDrive%/Documents - Trade Confirmations Team site/"
+                    "TRADE CONFIRMATION/Exotic Archives/PAGO Archive"
+                )
+
+        self.assertEqual(resolved, os.path.normpath(str(existing)))
 
 
 if __name__ == "__main__":

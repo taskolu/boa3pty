@@ -28,8 +28,10 @@ def resolve_archive_path(raw_path: str) -> str:
     """
     expanded = _expand_env_vars(raw_path)
     if os.path.isabs(expanded):
-        return os.path.normpath(expanded)
-    return os.path.normpath(os.path.join(get_app_dir(), expanded))
+        return _prefer_existing_sharepoint_variant(os.path.normpath(expanded))
+    return _prefer_existing_sharepoint_variant(
+        os.path.normpath(os.path.join(get_app_dir(), expanded))
+    )
 
 
 def _expand_env_vars(raw_path: str) -> str:
@@ -46,3 +48,25 @@ def _expand_env_vars(raw_path: str) -> str:
         return os.environ.get(name, match.group(0))
 
     return re.sub(r"%([^%]+)%", replace_var, expanded)
+
+
+def _prefer_existing_sharepoint_variant(path: str) -> str:
+    if os.path.exists(path):
+        return path
+
+    variants = (
+        (
+            "Documents - Trade Confirmations Team site",
+            "Trade Confirmations Team site - Documents",
+        ),
+        (
+            "Trade Confirmations Team site - Documents",
+            "Documents - Trade Confirmations Team site",
+        ),
+    )
+    for old, new in variants:
+        if old in path:
+            alternate = path.replace(old, new, 1)
+            if os.path.exists(alternate):
+                return alternate
+    return path
