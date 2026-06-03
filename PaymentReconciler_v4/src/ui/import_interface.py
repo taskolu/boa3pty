@@ -16,6 +16,7 @@ from qfluentwidgets import (
     SubtitleLabel, BodyLabel, TableWidget, ScrollArea
 )
 
+from src.core.counterparty_routing import matched_counterparty_for_bank_code
 from src.core.parser_gpg import parse_gpg_file, _read_rows
 from src.core.parser_wallstreet import parse_wallstreet_paste, get_detected_ws_headers
 
@@ -217,8 +218,9 @@ class ImportInterface(QWidget):
                     path, cp["csv_column_mapping"], cp["date_format"],
                     bank_code_column=bank_col,
                 )
-                if bank_code and self.config.find_by_bank_code(bank_code):
-                    self._load_gpg_success(records, cp_name, bank_code, path)
+                matched_cp = matched_counterparty_for_bank_code(self.config, bank_code or "")
+                if bank_code and matched_cp:
+                    self._load_gpg_success(records, matched_cp, bank_code, path)
                     return
             except Exception:
                 continue

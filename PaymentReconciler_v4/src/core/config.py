@@ -78,27 +78,38 @@ class ConfigManager:
         Pass 3: 3-char suffix match against stored csv_bank_code entries
                 (legacy fallback for explicitly configured bank codes).
         """
+        code = (code or "").strip()
+        code_upper = code.upper()
+        if not code:
+            return None
+
         counterparties = self._data.get("counterparties", {})
         # Pass 1: exact match against stored bank codes
         for name, cp in counterparties.items():
             stored = cp.get("csv_bank_code", "")
             codes = [c.strip() for c in stored.split(",") if c.strip()]
-            if code in codes:
+            if code_upper in {c.upper() for c in codes}:
                 return name
         # Pass 2: suffix match against counterparty internal name
         if len(code) >= 3:
-            suffix = code[-3:].upper()
-            for name in counterparties:
-                if suffix in name.upper():
-                    return name
+            suffix = code_upper[-3:]
+            matches = [
+                name for name in counterparties
+                if suffix in name.upper()
+            ]
+            if len(matches) == 1:
+                return matches[0]
         # Pass 3: suffix match against stored bank codes (explicit config fallback)
         if len(code) >= 3:
-            suffix = code[-3:].upper()
+            suffix = code_upper[-3:]
+            matches = []
             for name, cp in counterparties.items():
                 stored = cp.get("csv_bank_code", "")
                 codes = [c.strip() for c in stored.split(",") if c.strip()]
                 if any(c.upper().endswith(suffix) for c in codes if len(c) >= 3):
-                    return name
+                    matches.append(name)
+            if len(matches) == 1:
+                return matches[0]
         return None
 
     def find_by_ws_name(self, ws_name: str) -> Optional[str]:
