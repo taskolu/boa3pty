@@ -218,7 +218,9 @@ class ImportInterface(QWidget):
                     path, cp["csv_column_mapping"], cp["date_format"],
                     bank_code_column=bank_col,
                 )
-                matched_cp = matched_counterparty_for_bank_code(self.config, bank_code or "")
+                matched_cp = matched_counterparty_for_bank_code(
+                    self.config, bank_code or "", file_path=path
+                )
                 if bank_code and matched_cp:
                     self._load_gpg_success(records, matched_cp, bank_code, path)
                     return

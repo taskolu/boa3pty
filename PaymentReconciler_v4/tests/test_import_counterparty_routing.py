@@ -80,6 +80,56 @@ class ImportCounterpartyRoutingTests(unittest.TestCase):
             self.assertEqual(cfg.find_by_bank_code("ALLCUKBOA"), "BOA3PTY")
             self.assertEqual(cfg.find_by_bank_code("NPRCUKBOA"), "BOA3PTY")
 
+    def test_filename_keyword_overrides_inventory_code_when_unique(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            cfg_path = Path(tmp) / "config.json"
+            cfg_path.write_text(json.dumps({
+                "counterparties": {
+                    "BOA3PTY": {
+                        "csv_bank_code": "",
+                        "filename_keywords": "GPGPaymentReportValueDate_BOA",
+                    },
+                    "BOA Exotic MXN": {
+                        "csv_bank_code": "MXNCUKBOA",
+                        "filename_keywords": "GPGPaymentReportValueDate_MXNCUKBOA",
+                    },
+                }
+            }))
+            cfg = ConfigManager(str(cfg_path))
+
+            matched = matched_counterparty_for_bank_code(
+                cfg,
+                "ALLCUKBOA",
+                file_path="GPGPaymentReportValueDate_MXNCUKBOA_02-Jun-2026.xlsx",
+            )
+
+        self.assertEqual(matched, "BOA Exotic MXN")
+
+    def test_filename_keyword_does_not_guess_when_multiple_counterparties_match(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            cfg_path = Path(tmp) / "config.json"
+            cfg_path.write_text(json.dumps({
+                "counterparties": {
+                    "BOA3PTY": {
+                        "csv_bank_code": "",
+                        "filename_keywords": "GPGPaymentReportValueDate",
+                    },
+                    "BOA Exotic MXN": {
+                        "csv_bank_code": "MXNCUKBOA",
+                        "filename_keywords": "GPGPaymentReportValueDate",
+                    },
+                }
+            }))
+            cfg = ConfigManager(str(cfg_path))
+
+            matched = matched_counterparty_for_bank_code(
+                cfg,
+                "ALLCUKBOA",
+                file_path="GPGPaymentReportValueDate_MXNCUKBOA_02-Jun-2026.xlsx",
+            )
+
+        self.assertEqual(matched, "BOA3PTY")
+
 
 if __name__ == "__main__":
     unittest.main()

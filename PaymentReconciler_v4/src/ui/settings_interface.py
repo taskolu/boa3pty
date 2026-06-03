@@ -238,6 +238,12 @@ class CounterpartyDialog(QDialog):
         self.txt_bank_code.setPlaceholderText("e.g. ALLCUKBOA, MGACUKBOA (comma-separated)")
         form.addRow("CSV Bank Code(s):", self.txt_bank_code)
 
+        self.txt_filename_keywords = _LE(config.get("filename_keywords", ""))
+        self.txt_filename_keywords.setPlaceholderText(
+            "e.g. GPGPaymentReportValueDate_MXNCUKBOA (comma-separated)"
+        )
+        form.addRow("Filename Keywords:", self.txt_filename_keywords)
+
         self.txt_ws_name = _LE(config.get("wallstreet_counterparty_name", ""))
         form.addRow("WallStreet Customer Name:", self.txt_ws_name)
 
@@ -369,6 +375,7 @@ class CounterpartyDialog(QDialog):
             "config": {
                 "display_name":                   self.txt_display_name.text().strip(),
                 "csv_bank_code":                  self.txt_bank_code.text().strip(),
+                "filename_keywords":              self.txt_filename_keywords.text().strip(),
                 "wallstreet_counterparty_name":   self.txt_ws_name.text().strip(),
                 "archive_path":                   self.txt_archive_path.text().strip(),
                 "csv_column_mapping":             csv_map,
