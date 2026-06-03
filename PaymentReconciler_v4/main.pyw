@@ -15,6 +15,16 @@ def resource_path(*parts):
     return os.path.join(base, *parts)
 
 
+def center_on_primary_screen(window, app):
+    screen = app.primaryScreen()
+    if screen is None:
+        return
+
+    frame = window.frameGeometry()
+    frame.moveCenter(screen.availableGeometry().center())
+    window.move(frame.topLeft())
+
+
 def main():
     app = QApplication(sys.argv)
     app.setApplicationName("Exotic Payment Reconciler")
@@ -30,6 +40,7 @@ def main():
             shutil.copy2(default, config_path)
     config = ConfigManager(config_path)
     window = MainWindow(config)
+    center_on_primary_screen(window, app)
     window.show()
     sys.exit(app.exec())
 
