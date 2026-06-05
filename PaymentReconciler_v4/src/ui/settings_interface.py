@@ -1,11 +1,10 @@
 from __future__ import annotations
-import hashlib
 import os
 
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QFileDialog, QMessageBox,
     QDialog, QDialogButtonBox, QFormLayout, QSpinBox, QCheckBox,
-    QHeaderView, QAbstractItemView, QInputDialog
+    QHeaderView, QAbstractItemView
 )
 from PySide6.QtCore import Signal, Qt
 
@@ -13,8 +12,6 @@ from qfluentwidgets import (
     PushButton, PrimaryPushButton, SubtitleLabel, BodyLabel, CaptionLabel,
     LineEdit, ComboBox, ListWidget, TableWidget, ScrollArea, CardWidget
 )
-
-_SETTINGS_PWD_HASH = hashlib.sha256(b"Convera22!").hexdigest()
 
 
 class SettingsInterface(QWidget):
@@ -24,23 +21,7 @@ class SettingsInterface(QWidget):
         super().__init__(parent=parent)
         self.setObjectName("settingsInterface")
         self.config = config_manager
-        self._unlocked = False
         self._init_ui()
-
-    def _check_auth(self) -> bool:
-        if self._unlocked:
-            return True
-        from PySide6.QtWidgets import QLineEdit as _LE
-        pwd, ok = QInputDialog.getText(
-            self, "Settings Locked", "Enter password to edit settings:",
-            _LE.EchoMode.Password
-        )
-        if ok and hashlib.sha256(pwd.encode()).hexdigest() == _SETTINGS_PWD_HASH:
-            self._unlocked = True
-            return True
-        if ok:
-            QMessageBox.warning(self, "Access Denied", "Incorrect password.")
-        return False
 
     def _init_ui(self):
         # Outer scroll area so settings page is scrollable
@@ -111,8 +92,6 @@ class SettingsInterface(QWidget):
             self.lst_cp.setCurrentRow(0)
 
     def _add_cp(self):
-        if not self._check_auth():
-            return
         dlg = CounterpartyDialog(self)
         if dlg.exec() == QDialog.Accepted:
             data = dlg.get_data()
@@ -128,8 +107,6 @@ class SettingsInterface(QWidget):
         return item.text() if item else None
 
     def _edit_cp(self):
-        if not self._check_auth():
-            return
         name = self._current_cp_name()
         if not name:
             return
@@ -142,8 +119,6 @@ class SettingsInterface(QWidget):
             self._refresh_cp_list()
 
     def _remove_cp(self):
-        if not self._check_auth():
-            return
         name = self._current_cp_name()
         if not name:
             return
@@ -158,8 +133,6 @@ class SettingsInterface(QWidget):
             self._refresh_cp_list()
 
     def _save(self):
-        if not self._check_auth():
-            return
         raw_ccy = self.txt_ignored_ccy.text()
         self.config.ignored_currencies = [c.strip() for c in raw_ccy.split(",") if c.strip()]
         self.config.save()
