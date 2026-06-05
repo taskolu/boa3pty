@@ -14,8 +14,6 @@ from qfluentwidgets import (
     LineEdit, ComboBox, ListWidget, TableWidget, ScrollArea, CardWidget
 )
 
-from src.core.app_dir import resolve_archive_path
-
 _SETTINGS_PWD_HASH = hashlib.sha256(b"Convera22!").hexdigest()
 
 
@@ -72,28 +70,6 @@ class SettingsInterface(QWidget):
         ccy_lay.addWidget(hint)
         root.addWidget(ccy_card)
 
-        # ── Archive path ──────────────────────────────────────────────
-        arch_card = CardWidget(container)
-        arch_lay = QVBoxLayout(arch_card)
-        arch_lay.setContentsMargins(16, 12, 16, 12)
-        arch_lay.addWidget(BodyLabel("Default Archive Path (fallback)"))
-        arch_row = QHBoxLayout()
-        self.txt_archive_path = LineEdit(arch_card)
-        self.txt_archive_path.setText(self.config.archive_path)
-        self.txt_archive_path.setPlaceholderText("Used when a counterparty has no archive path")
-        self.txt_archive_path.textChanged.connect(self._update_resolved_label)
-        arch_row.addWidget(self.txt_archive_path, 1)
-        btn_browse = PushButton("Browse…", arch_card)
-        btn_browse.clicked.connect(self._browse_archive)
-        arch_row.addWidget(btn_browse)
-        arch_lay.addLayout(arch_row)
-        self.lbl_resolved = CaptionLabel("", arch_card)
-        self.lbl_resolved.setStyleSheet("color: #888;")
-        self.lbl_resolved.setWordWrap(True)
-        arch_lay.addWidget(self.lbl_resolved)
-        self._update_resolved_label()
-        root.addWidget(arch_card)
-
         # ── Counterparties ────────────────────────────────────────────
         cp_card = CardWidget(container)
         cp_lay = QVBoxLayout(cp_card)
@@ -126,21 +102,6 @@ class SettingsInterface(QWidget):
 
         scroll.setWidget(container)
         outer.addWidget(scroll)
-
-    def _update_resolved_label(self):
-        raw = self.txt_archive_path.text().strip()
-        try:
-            resolved = resolve_archive_path(raw) if raw else ""
-        except Exception:
-            resolved = ""
-        self.lbl_resolved.setText(f"Resolved path: {resolved}" if resolved else "")
-
-    def _browse_archive(self):
-        if not self._check_auth():
-            return
-        path = QFileDialog.getExistingDirectory(self, "Select Archive Folder")
-        if path:
-            self.txt_archive_path.setText(_normalize_onedrive_path(path))
 
     def _refresh_cp_list(self):
         self.lst_cp.clear()
@@ -201,7 +162,6 @@ class SettingsInterface(QWidget):
             return
         raw_ccy = self.txt_ignored_ccy.text()
         self.config.ignored_currencies = [c.strip() for c in raw_ccy.split(",") if c.strip()]
-        self.config.archive_path = self.txt_archive_path.text().strip()
         self.config.save()
         self.settings_saved.emit()
 
@@ -249,7 +209,7 @@ class CounterpartyDialog(QDialog):
 
         archive_row = QHBoxLayout()
         self.txt_archive_path = _LE(config.get("archive_path", ""))
-        self.txt_archive_path.setPlaceholderText("leave blank to use default archive path")
+        self.txt_archive_path.setPlaceholderText("required; set one archive folder per counterparty")
         archive_row.addWidget(self.txt_archive_path)
         btn_archive = PushButton("Browse...", self)
         btn_archive.clicked.connect(self._browse_archive_path)

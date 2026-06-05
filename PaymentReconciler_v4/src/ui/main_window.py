@@ -80,13 +80,13 @@ class MainWindow(FluentWindow):
             lookback = cp.get("lookback_days", 10)
             dt06_code = cp.get("dt06_code", "DT06")
             amount_tolerances = cp.get("amount_tolerances", {})
-            archive_path = resolve_archive_path(
-                self.config.get_counterparty_archive_path(counterparty_name)
-            )
-            reference_date = _dominant_gpg_value_date(gpg_records)
-            archived_flags = lookup_flagged_records(
-                archive_path, display_name, lookback_days=lookback,
-                reference_date=reference_date)
+            raw_archive_path = self.config.get_counterparty_archive_path(counterparty_name)
+            if raw_archive_path:
+                archive_path = resolve_archive_path(raw_archive_path)
+                reference_date = _dominant_gpg_value_date(gpg_records)
+                archived_flags = lookup_flagged_records(
+                    archive_path, display_name, lookback_days=lookback,
+                    reference_date=reference_date)
         except Exception:
             pass
 
@@ -147,9 +147,20 @@ class MainWindow(FluentWindow):
             return
         label = counterparty_display or self._current_counterparty or "UNKNOWN"
         try:
-            archive_path = resolve_archive_path(
-                self.config.get_counterparty_archive_path(self._current_counterparty)
-            )
+            raw_archive_path = self.config.get_counterparty_archive_path(self._current_counterparty)
+            if not raw_archive_path:
+                InfoBar.error(
+                    title="Archive Path Missing",
+                    content=f"Set an archive path for {label} in Settings.",
+                    orient=Qt.Horizontal,
+                    isClosable=True,
+                    position=InfoBarPosition.TOP_RIGHT,
+                    duration=5000,
+                    parent=self,
+                )
+                return
+
+            archive_path = resolve_archive_path(raw_archive_path)
             am = ArchiveManager(archive_path)
 
             expected = os.path.join(archive_path, f"{value_date.isoformat()}_{label}.xlsx")

@@ -80,7 +80,16 @@ class ReportsInterface(QWidget):
         qd = self.dt_report.date()
         report_date = date(qd.year(), qd.month(), qd.day())
 
-        archive_path = resolve_archive_path(self.config.get_counterparty_archive_path(cp_name))
+        raw_archive_path = self.config.get_counterparty_archive_path(cp_name)
+        if not raw_archive_path:
+            QMessageBox.warning(
+                self,
+                "Archive Path Missing",
+                f"Set an archive path for {cp_display} in Settings first.",
+            )
+            return
+
+        archive_path = resolve_archive_path(raw_archive_path)
         try:
             am = ArchiveManager(archive_path)
             data = am.load_daily(report_date, cp_display)

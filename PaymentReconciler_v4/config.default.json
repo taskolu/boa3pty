@@ -1,10 +1,9 @@
 {
-  "archive_path": "%OneDriveCommercial%\\Documents - Trade Confirmations Team site\\TRADE CONFIRMATION\\BOA3PTY Archive",
   "ignored_currencies": "JPY, MYR, INR, CNY, CNH",
   "counterparties": {
     "BOA3PTY": {
       "display_name": "BOA Exotic",
-      "archive_path": "",
+      "archive_path": "%OneDriveCommercial%\\Documents - Trade Confirmations Team site\\TRADE CONFIRMATION\\BOA3PTY Archive",
       "csv_bank_code": "",
       "wallstreet_counterparty_name": "",
       "csv_column_mapping": {

@@ -11,8 +11,7 @@ class ConfigManager:
 
     @property
     def archive_path(self) -> str:
-        # Default ".." = folder above Settings/ = BOA3PTY Archive/ on OneDrive
-        return self._data.get("archive_path", "..")
+        return self._data.get("archive_path", "")
 
     @property
     def ignored_currencies(self) -> list[str]:
@@ -37,7 +36,7 @@ class ConfigManager:
 
     def get_counterparty_archive_path(self, name: str) -> str:
         cp = self._data.get("counterparties", {}).get(name, {})
-        return cp.get("archive_path") or self.archive_path
+        return cp.get("archive_path", "").strip()
 
     def get_counterparty_name_by_display(self, display_name: str) -> Optional[str]:
         for name in self._data.get("counterparties", {}):
@@ -47,8 +46,6 @@ class ConfigManager:
 
     def get_archive_paths(self) -> list[str]:
         paths = []
-        if self.archive_path:
-            paths.append(self.archive_path)
         for cp in self._data.get("counterparties", {}).values():
             path = cp.get("archive_path")
             if path:
