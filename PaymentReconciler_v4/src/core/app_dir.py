@@ -51,14 +51,18 @@ def _expand_env_vars(raw_path: str) -> str:
 
 
 def _prefer_existing_sharepoint_variant(path: str) -> str:
+    canonical = "Trade Confirmations Team site - Documents"
+    legacy = "Documents - Trade Confirmations Team site"
+
+    if legacy in path:
+        canonical_path = path.replace(legacy, canonical, 1)
+        if os.path.exists(canonical_path):
+            return canonical_path
+
     if os.path.exists(path):
         return path
 
     variants = (
-        (
-            "Documents - Trade Confirmations Team site",
-            "Trade Confirmations Team site - Documents",
-        ),
         (
             "Trade Confirmations Team site - Documents",
             "Documents - Trade Confirmations Team site",

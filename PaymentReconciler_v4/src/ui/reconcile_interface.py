@@ -339,8 +339,7 @@ class ReconcileInterface(QWidget):
             vd = max(set(dates), key=dates.count)
             self.dt_archive.setDate(QDate(vd.year, vd.month, vd.day))
 
-        if not self.txt_archive_cp.text().strip():
-            self.txt_archive_cp.setText(counterparty_name)
+        self.txt_archive_cp.setText(counterparty_name)
 
         self._update_summary(self._all_results)
         self._populate_table(self._all_results)
