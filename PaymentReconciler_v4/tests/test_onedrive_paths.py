@@ -29,55 +29,55 @@ class OneDrivePathTests(unittest.TestCase):
             ),
         )
 
-    def test_sharepoint_documents_folder_variant_uses_existing_path(self):
+    def test_sharepoint_documents_folder_variant_rewrites_to_documents_name(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp) / "OneDrive - Convera"
-            existing = (
-                root
-                / "Trade Confirmations Team site - Documents"
-                / "TRADE CONFIRMATION"
-                / "Exotic Archives"
-                / "PAGO Archive"
-            )
-            existing.mkdir(parents=True)
-
-            env = {"OneDriveCommercial": str(root)}
-            with patch.dict(os.environ, env, clear=True):
-                resolved = resolve_archive_path(
-                    "%OneDrive%/Documents - Trade Confirmations Team site/"
-                    "TRADE CONFIRMATION/Exotic Archives/PAGO Archive"
-                )
-
-        self.assertEqual(resolved, os.path.normpath(str(existing)))
-
-    def test_sharepoint_documents_folder_variant_prefers_canonical_when_both_exist(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            root = Path(tmp) / "OneDrive - Convera"
-            wrong = (
+            correct = (
                 root
                 / "Documents - Trade Confirmations Team site"
                 / "TRADE CONFIRMATION"
                 / "Exotic Archives"
                 / "PAGO Archive"
             )
-            canonical = (
+            correct.mkdir(parents=True)
+
+            env = {"OneDriveCommercial": str(root)}
+            with patch.dict(os.environ, env, clear=True):
+                resolved = resolve_archive_path(
+                    "%OneDrive%/Trade Confirmations Team site - Documents/"
+                    "TRADE CONFIRMATION/Exotic Archives/PAGO Archive"
+                )
+
+        self.assertEqual(resolved, os.path.normpath(str(correct)))
+
+    def test_sharepoint_documents_folder_variant_prefers_documents_name_when_both_exist(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / "OneDrive - Convera"
+            correct = (
+                root
+                / "Documents - Trade Confirmations Team site"
+                / "TRADE CONFIRMATION"
+                / "Exotic Archives"
+                / "PAGO Archive"
+            )
+            alternate = (
                 root
                 / "Trade Confirmations Team site - Documents"
                 / "TRADE CONFIRMATION"
                 / "Exotic Archives"
                 / "PAGO Archive"
             )
-            wrong.mkdir(parents=True)
-            canonical.mkdir(parents=True)
+            correct.mkdir(parents=True)
+            alternate.mkdir(parents=True)
 
             env = {"OneDriveCommercial": str(root)}
             with patch.dict(os.environ, env, clear=True):
                 resolved = resolve_archive_path(
-                    "%OneDrive%/Documents - Trade Confirmations Team site/"
+                    "%OneDrive%/Trade Confirmations Team site - Documents/"
                     "TRADE CONFIRMATION/Exotic Archives/PAGO Archive"
                 )
 
-        self.assertEqual(resolved, os.path.normpath(str(canonical)))
+        self.assertEqual(resolved, os.path.normpath(str(correct)))
 
 
 if __name__ == "__main__":
